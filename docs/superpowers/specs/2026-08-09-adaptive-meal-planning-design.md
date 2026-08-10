@@ -398,6 +398,31 @@ guessed values are distinguishable from label-confirmed ones.
 **Raw API responses cache to disk**, keyed by request. Imports stay reproducible and a network
 blip never blocks work.
 
+### Ingredient capture is a session activity, not a code path
+
+Ingredient lists and macros have different reliability requirements, and conflating them
+leads to the wrong build.
+
+**Macros must be trustworthy**, which is why they are always computed from the item table
+and never taken from a recipe's own claims. **Ingredient lists do not** — they are names and
+quantities, cheap to verify by eye, and every gram gets priced against foods already curated.
+
+So an ingredient list may come from anywhere: a screenshot, a food blog, a Cronometer
+explode-recipe export, handwriting. Converting one into a recipe is the same operation
+regardless of source — match each line to a food in the library, resolve units, call
+`create_recipe`. That matching is judgment work and happens in session, against the library's
+callable surface. **No scraper, no parser, no importer is built for this.** Revisit only if
+it becomes repetitive enough to be worth automating.
+
+This does not contradict the rejection of a scraped recipe library. That rejection stands:
+planning is not driven by a corpus of web recipes, and web-sourced *macros* are never used.
+
+**Consequence worth tracking.** A dish imported as an opaque item — the Cronometer CSV path —
+contributes macros to a plan but cannot be flex-adjusted, cannot appear in the gap list, and
+cannot draw from inventory, because nothing knows what it consumes. Batch-prep dishes whose
+ingredients get shopped for should be composed with real components. Dishes eaten as a fixed
+unit are fine left opaque.
+
 ### Seeding
 
 Priority is a robust schema, not a large import. In order:
