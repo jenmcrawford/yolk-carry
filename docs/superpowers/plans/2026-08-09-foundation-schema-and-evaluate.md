@@ -1084,18 +1084,21 @@ def test_recipe_nests_inside_another_recipe(db, pantry):
     assert m.kcal == pytest.approx(expected, abs=0.01)
 
 
-def test_self_referential_recipe_rejected(db, pantry):
+def test_direct_self_reference_rejected_by_schema(db, pantry):
+    """A recipe containing itself is caught by the CHECK constraint, before
+    any Python-level cycle detection is reached."""
+    import sqlite3
+
     recipe_id = create_recipe(
         db, name="Loop", role="sauce", cooked_yield_g=100.0,
         components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
     )
-    with pytest.raises(RecipeCycleError):
+    with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             "INSERT INTO food_components (parent_food_id, child_food_id, qty, unit) "
             "VALUES (?, ?, 1, 'g')",
             (recipe_id, recipe_id),
         )
-        recompute_recipe(db, recipe_id)
 
 
 def test_mutually_recursive_recipes_rejected(db, pantry):
@@ -1256,9 +1259,12 @@ def _components(conn: sqlite3.Connection, food_id: int) -> list[sqlite3.Row]:
 def _macros_resolved(
     conn: sqlite3.Connection, food_id: int, seen: frozenset[int]
 ) -> Macros:
-    """Per-100 g macros, recursing into recipes that have no cached value.
+    """Per-100 g macros, always recursing into nested recipes rather than
+    trusting their cached value, so a stale cache cannot propagate.
 
-    `seen` is the ancestor chain, used to detect cycles.
+    `seen` is the ancestor chain, used to detect cycles. Indirect cycles are
+    only detectable here: the schema's CHECK catches direct self-reference,
+    but a two-recipe loop is closed by an insert that is individually valid.
     """
     if food_id in seen:
         name = conn.execute(
