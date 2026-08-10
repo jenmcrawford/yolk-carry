@@ -8,7 +8,9 @@ as a component of a recipe or an entry in a plan.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 
+from yolk.errors import MissingYieldError, RecipeCycleError
 from yolk.macros import Macros
 from yolk.units import to_grams
 
@@ -96,3 +98,149 @@ def portion_macros(
     """Macros for a given quantity of a food, in any unit it knows."""
     grams = to_grams(conn, food_id, qty, unit)
     return macros_per_100g(conn, food_id).scale(grams / 100.0)
+
+
+def create_recipe(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    role: str,
+    components: list[dict],
+    cooked_yield_g: float | None = None,
+    instructions: str | None = None,
+    units: dict[str, float] | None = None,
+    notes: str | None = None,
+) -> int:
+    """Create a composed food. Macros are computed, never supplied.
+
+    Each component dict needs food_id, qty, and unit. Optional keys: flex
+    (bool), flex_min_g, flex_max_g, note.
+
+    Recipe, components, and units are one transaction. A rejected component
+    must not leave an empty recipe behind.
+    """
+    try:
+        cur = conn.execute(
+            "INSERT INTO foods (kind, name, role, cooked_yield_g, instructions, "
+            "source, notes) VALUES ('recipe', ?, ?, ?, ?, 'computed', ?)",
+            (name, role, cooked_yield_g, instructions, notes),
+        )
+        food_id = cur.lastrowid
+        for c in components:
+            conn.execute(
+                "INSERT INTO food_components (parent_food_id, child_food_id, qty, "
+                "unit, flex, flex_min_g, flex_max_g, note) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    food_id, c["food_id"], c["qty"], c["unit"],
+                    int(c.get("flex", False)),
+                    c.get("flex_min_g"), c.get("flex_max_g"), c.get("note"),
+                ),
+            )
+        for unit, grams in (units or {}).items():
+            conn.execute(
+                "INSERT INTO food_units (food_id, unit, grams) VALUES (?, ?, ?)",
+                (food_id, unit, grams),
+            )
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    if cooked_yield_g is not None:
+        recompute_recipe(conn, food_id)
+    return food_id
+
+
+def _components(conn: sqlite3.Connection, food_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT child_food_id, qty, unit FROM food_components "
+        "WHERE parent_food_id = ? ORDER BY id",
+        (food_id,),
+    ).fetchall()
+
+
+def _macros_resolved(
+    conn: sqlite3.Connection, food_id: int, seen: frozenset[int]
+) -> Macros:
+    """Per-100 g macros, always recursing into nested recipes rather than
+    trusting their cached value, so a stale cache cannot propagate.
+
+    `seen` is the ancestor chain, used to detect cycles. Indirect cycles are
+    only detectable here: the schema's CHECK catches direct self-reference,
+    but a two-recipe loop is closed by an insert that is individually valid.
+    """
+    if food_id in seen:
+        name = conn.execute(
+            "SELECT name FROM foods WHERE id = ?", (food_id,)
+        ).fetchone()["name"]
+        raise RecipeCycleError(
+            f"Recipe {name!r} (id {food_id}) contains itself, directly or "
+            f"through a nested recipe."
+        )
+
+    row = conn.execute(
+        "SELECT kind, name, kcal_100g, cooked_yield_g FROM foods WHERE id = ?",
+        (food_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+
+    if row["kind"] == "item":
+        return macros_per_100g(conn, food_id)
+
+    if row["cooked_yield_g"] is None:
+        raise MissingYieldError(
+            f"Recipe {row['name']!r} (id {food_id}) has no cooked_yield_g, so its "
+            f"per-100 g macros cannot be computed. Weigh the finished dish and "
+            f"set cooked_yield_g."
+        )
+
+    chain = seen | {food_id}
+    total = Macros.zero()
+    for c in _components(conn, food_id):
+        grams = to_grams(conn, c["child_food_id"], c["qty"], c["unit"])
+        child = _macros_resolved(conn, c["child_food_id"], chain)
+        total = total + child.scale(grams / 100.0)
+
+    return total.scale(100.0 / row["cooked_yield_g"])
+
+
+def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
+    """Recompute and cache a recipe's per-100 g macros."""
+    macros = _macros_resolved(conn, food_id, frozenset())
+    conn.execute(
+        "UPDATE foods SET kcal_100g = ?, protein_g_100g = ?, fat_g_100g = ?, "
+        "carb_g_100g = ?, fiber_g_100g = ?, computed_at = ? WHERE id = ?",
+        (
+            macros.kcal, macros.protein_g, macros.fat_g, macros.carb_g,
+            macros.fiber_g, datetime.now(timezone.utc).isoformat(), food_id,
+        ),
+    )
+    conn.commit()
+    return macros
+
+
+def derived_tags(conn: sqlite3.Connection, food_id: int) -> set[str]:
+    """Tags on this food, unioned with those of every nested component.
+
+    Only purchased items are tagged by hand. A recipe's tags are derived, so
+    a sensitivity buried two levels deep still surfaces.
+    """
+    return _derived_tags(conn, food_id, frozenset())
+
+
+def _derived_tags(
+    conn: sqlite3.Connection, food_id: int, seen: frozenset[int]
+) -> set[str]:
+    if food_id in seen:
+        raise RecipeCycleError(f"Cycle detected while deriving tags for id {food_id}")
+    rows = conn.execute(
+        "SELECT t.name FROM food_tags ft JOIN tags t ON t.id = ft.tag_id "
+        "WHERE ft.food_id = ?",
+        (food_id,),
+    ).fetchall()
+    tags = {r["name"] for r in rows}
+    chain = seen | {food_id}
+    for c in _components(conn, food_id):
+        tags |= _derived_tags(conn, c["child_food_id"], chain)
+    return tags
