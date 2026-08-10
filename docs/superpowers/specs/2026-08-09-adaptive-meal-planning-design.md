@@ -365,6 +365,19 @@ Four paths, one resulting row shape.
 | Open Food Facts by barcode | `source='off'` | Branded items USDA misses. Community-contributed, so lands `verified=false` until checked against the label. |
 | Manual from label | `source='label'` | Supplements — Karbolyn, Liquid IV, cyclic dextrin — plus their scoop and packet gram conversions. |
 | Compose a recipe | `source='computed'` | Component foods plus a cooked yield weight yields per-100g. |
+| Cronometer recipe JSON | `source='cronometer'` | Per-recipe export from the recipe editor's Settings menu. Carries ingredient structure, unlike the account-level export, which emits custom recipes as logged diary entries rather than structured definitions. There is no bulk export — one recipe at a time. |
+
+**The Cronometer importer is blocked on a real sample.** `examples/` must contain at least one
+genuine per-recipe JSON export before that path is written. The schema is not documented
+publicly and must not be inferred: an importer built against a guessed shape would appear
+tested while silently mis-mapping fields, which is worse than not having one. Until a real
+export lands in `examples/`, this path stays unimplemented and Cronometer recipes are
+re-entered by hand via the compose path.
+
+Cronometer's **cooked-recipe-weight** field is worth adopting regardless of whether the
+importer gets built: raw ingredient macros divided by cooked yield weight is exactly the
+`cooked_yield_g` mechanism above, and it is what makes souper-cube portions accurate rather
+than estimated.
 
 Every food carries `source`, `source_ref`, and `verified`, so provenance is auditable and
 guessed values are distinguishable from label-confirmed ones.
@@ -380,7 +393,7 @@ Priority is a robust schema, not a large import. In order:
    protein anchors, vegetables, fats, and carbs actually in the rotation.
 2. Selective, opportunistic entries from the existing xlsx workbooks. Not a bulk import.
 3. Cronometer examples where per-recipe JSON export is worth the click. There is no bulk
-   recipe export; it is one recipe at a time.
+   recipe export; it is one recipe at a time, and the importer is gated on a real sample.
 
 ---
 
@@ -428,8 +441,15 @@ exercise the rest-day profile.
 - `evaluate` is deterministic and free of side effects.
 - Unit conversions round-trip.
 
+**Fixture requirement.** `examples/` holds the real artifacts the importers and golden-file
+tests run against: the six coach-authored plan PDFs, and — before the Cronometer path is
+built — at least one genuine per-recipe JSON export. Import tests run against real files, not
+hand-written approximations of them.
+
 **Unit tests.**
 - Cycle detection rejects self-referential and mutually-referential recipes.
+- Cronometer import round-trips a real sample: ingredients, quantities, units, and cooked
+  yield weight all land in the expected `foods` and `food_components` rows.
 - A tag two levels deep in a nested recipe trips a protocol violation.
 - Dated profile rows resolve to the correct profile for a given date.
 - `substitute` leaves the parent plan byte-identical.
@@ -484,4 +504,5 @@ automation becomes obvious rather than speculative.
 3. **Does the freezer bank have a known current state, or start empty?** Assume empty and
    accumulate unless told otherwise.
 4. **Are there Cronometer recipes worth exporting, and how many?** Determines whether
-   per-recipe JSON clicking beats re-entry.
+   per-recipe JSON clicking beats re-entry. The importer is separately blocked on a real
+   sample landing in `examples/` — see §6.
