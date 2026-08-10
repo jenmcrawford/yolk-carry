@@ -13,6 +13,7 @@ import sqlite3
 import httpx
 from dotenv import load_dotenv
 
+from yolk.errors import SourceRequestError
 from yolk.foods import create_item
 from yolk.macros import Macros
 from yolk.sources.cache import cached_json
@@ -38,6 +39,32 @@ def _api_key() -> str:
     return key
 
 
+def _fetch_json(url: str, params: dict) -> dict:
+    """GET `url` with `params` and return the parsed JSON body.
+
+    FDC only supports the API key as a query parameter, so it ends up in
+    the request URL — and `httpx.HTTPError`'s message embeds the full URL,
+    query string included. A bad key, an api.data.gov rate limit (429), or
+    a transient 5xx would otherwise put the raw key into a traceback, a CI
+    log, or a pasted bug report. Catch it here, redact the key value (not
+    the whole URL — the endpoint and status are what make the error
+    diagnosable), and re-raise as `SourceRequestError`.
+
+    `from None` on the re-raise is deliberate: `from exc` would print the
+    original exception's message (key included) in the traceback anyway.
+    """
+    key = params.get("api_key", "")
+    try:
+        response = httpx.get(url, params=params, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        message = str(exc)
+        if key:
+            message = message.replace(key, "***")
+        raise SourceRequestError(message) from None
+    return response.json()
+
+
 def search_foods(
     query: str,
     *,
@@ -48,18 +75,15 @@ def search_foods(
     key = f"search:{query}:{page_size}:{','.join(data_types)}"
 
     def fetch():
-        response = httpx.get(
+        return _fetch_json(
             f"{BASE_URL}/foods/search",
-            params={
+            {
                 "query": query,
                 "pageSize": page_size,
                 "dataType": ",".join(data_types),
                 "api_key": _api_key(),
             },
-            timeout=30.0,
         )
-        response.raise_for_status()
-        return response.json()
 
     return cached_json("usda", key, fetch).get("foods", [])
 
@@ -68,13 +92,7 @@ def get_food(fdc_id: int) -> dict:
     """Fetch one food by FDC id."""
 
     def fetch():
-        response = httpx.get(
-            f"{BASE_URL}/food/{fdc_id}",
-            params={"api_key": _api_key()},
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        return response.json()
+        return _fetch_json(f"{BASE_URL}/food/{fdc_id}", {"api_key": _api_key()})
 
     return cached_json("usda", f"food:{fdc_id}", fetch)
 

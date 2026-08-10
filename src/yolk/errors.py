@@ -19,3 +19,7 @@ class MissingYieldError(YolkError):
 
 class RecipeCycleError(YolkError):
     """A recipe contains itself, directly or transitively."""
+
+
+class SourceRequestError(YolkError):
+    """A request to an external nutrition source (USDA, Open Food Facts, ...) failed."""

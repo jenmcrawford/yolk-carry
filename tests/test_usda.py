@@ -1,5 +1,7 @@
+import httpx
 import pytest
 
+from yolk.errors import SourceRequestError
 from yolk.macros import Macros
 from yolk.sources import usda
 
@@ -72,3 +74,33 @@ def test_failed_fetch_writes_nothing(db, monkeypatch):
         usda.import_food(db, 171077, role="protein")
     count = db.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"]
     assert count == 0
+
+
+def test_failed_parse_writes_nothing(db, monkeypatch):
+    """parse_macros can also raise (missing energy) — that must be caught
+    before create_item runs too, not just a fetch failure."""
+    payload = {"fdcId": 1, "description": "Mystery", "foodNutrients": []}
+    monkeypatch.setattr(usda, "get_food", lambda fdc_id: payload)
+    with pytest.raises(ValueError):
+        usda.import_food(db, 1, role="protein")
+    count = db.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"]
+    assert count == 0
+
+
+def test_fetch_json_redacts_api_key_on_http_error(monkeypatch):
+    """An HTTP error's message embeds the full request URL, api_key query
+    param included. The redaction must strip the key value, not just
+    happen to omit it, so build a real httpx error and check its text."""
+    fake_key = "SECRET123"
+    request = httpx.Request(
+        "GET", "https://api.nal.usda.gov/fdc/v1/food/1", params={"api_key": fake_key}
+    )
+    response = httpx.Response(403, request=request)
+    monkeypatch.setattr(usda.httpx, "get", lambda *a, **k: response)
+
+    with pytest.raises(SourceRequestError) as exc:
+        usda._fetch_json(
+            "https://api.nal.usda.gov/fdc/v1/food/1", {"api_key": fake_key}
+        )
+
+    assert fake_key not in str(exc.value)
