@@ -202,3 +202,52 @@ def test_rejected_component_leaves_no_orphan_recipe(db, pantry):
         "SELECT COUNT(*) AS n FROM foods WHERE name = 'Bad Flex 2'"
     ).fetchone()
     assert row["n"] == 0
+
+
+def test_create_recipe_nesting_unyielded_recipe_is_atomic(db, pantry):
+    """create_recipe computes initial macros inside its own transaction. If a
+    yield is given but a nested component recipe has no cooked_yield_g of its
+    own, the whole insert must roll back -- not commit a parent recipe row
+    with no macros."""
+    unweighed_id = create_recipe(
+        db, name="Unweighed Component", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 50, "unit": "g"}],
+    )
+    foods_before = db.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"]
+    components_before = db.execute(
+        "SELECT COUNT(*) AS n FROM food_components"
+    ).fetchone()["n"]
+
+    with pytest.raises(MissingYieldError):
+        create_recipe(
+            db, name="Nests Unweighed", role="sauce", cooked_yield_g=100.0,
+            components=[{"food_id": unweighed_id, "qty": 50, "unit": "g"}],
+        )
+
+    row = db.execute(
+        "SELECT COUNT(*) AS n FROM foods WHERE name = 'Nests Unweighed'"
+    ).fetchone()
+    assert row["n"] == 0
+    assert db.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"] == foods_before
+    assert (
+        db.execute("SELECT COUNT(*) AS n FROM food_components").fetchone()["n"]
+        == components_before
+    )
+
+
+def test_macros_per_100g_raises_on_uncomputed_recipe(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Uncomputed", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 50, "unit": "g"}],
+    )
+    with pytest.raises(MissingYieldError):
+        macros_per_100g(db, recipe_id)
+
+
+def test_portion_macros_raises_on_uncomputed_recipe(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Uncomputed 2", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 50, "unit": "g"}],
+    )
+    with pytest.raises(MissingYieldError):
+        portion_macros(db, recipe_id, 10, "g")

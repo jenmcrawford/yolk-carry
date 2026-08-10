@@ -21,6 +21,40 @@
 - Secrets come from `.env` (`USDA_API_KEY`). `.env` is gitignored and must stay that way.
 - Commit after every task. Conventional commit prefixes (`feat:`, `test:`, `chore:`).
 
+## Amendments during execution
+
+Two defects were found in this plan's own sample code during the Task 5 review. In both,
+the sample code contradicted the Global Constraints above. **The constraints govern** — the
+code below is amended accordingly. Recorded here rather than silently edited, so the reason
+survives.
+
+**A. `create_recipe` must be atomic (Task 5).** As originally written it called
+`conn.commit()` and *then* `recompute_recipe()`, leaving the recompute outside the
+transaction. A recipe nesting an existing yield-less recipe raises `MissingYieldError` from
+that recompute while the parent row and its components stay committed — a partial write on a
+raised call, violating "Never insert a partial food row."
+
+Amended: inside the existing `try`, after the component and unit inserts, compute via
+`_macros_resolved(conn, food_id, frozenset())` and write the result with an `UPDATE` before
+the single `conn.commit()`. The post-commit `recompute_recipe` call is removed. Both
+`create_recipe` and `recompute_recipe` share a private `_write_computed_macros(conn,
+food_id, macros)` helper that does not commit; `recompute_recipe` remains public and commits
+for standalone use. Covered by a test asserting that a failed nested recompute leaves neither
+a `foods` row nor `food_components` rows behind.
+
+**B. `macros_per_100g` must refuse uncomputed recipes (Tasks 4 and 5).** It coalesced NULL
+macro columns to `0.0`. Harmless for items — `CHECK (kind = 'recipe' OR kcal_100g IS NOT
+NULL)` guarantees they have macros — but recipes are allowed NULL macros, so calling
+`macros_per_100g` or `portion_macros` on an unweighed recipe returned zeros instead of
+raising, violating "Never estimate a recipe yield."
+
+Amended: `macros_per_100g` selects `kind` and raises `MissingYieldError` when the food is a
+recipe with NULL `kcal_100g`, naming the recipe and directing the caller to set
+`cooked_yield_g` and run `recompute_recipe`. Items are unaffected. `_macros_resolved` calls
+`macros_per_100g` only on its `kind='item'` branch, and `recompute_recipe` routes through
+`_macros_resolved`, so neither is affected. Covered by tests asserting both functions raise
+on an unweighed recipe.
+
 ---
 
 ### Task 1: Project scaffolding and database schema

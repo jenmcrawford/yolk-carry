@@ -75,14 +75,25 @@ def add_unit(
 
 
 def macros_per_100g(conn: sqlite3.Connection, food_id: int) -> Macros:
-    """Return the stored per-100 g macros for a food."""
+    """Return the stored per-100 g macros for a food.
+
+    Items always have macros (the schema guarantees it). A recipe that has
+    never been computed has NULL macro columns; that must raise rather than
+    silently reporting zero, since zero is a plausible-looking wrong answer.
+    """
     row = conn.execute(
-        "SELECT kcal_100g, protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g "
-        "FROM foods WHERE id = ?",
+        "SELECT kind, name, kcal_100g, protein_g_100g, fat_g_100g, carb_g_100g, "
+        "fiber_g_100g FROM foods WHERE id = ?",
         (food_id,),
     ).fetchone()
     if row is None:
         raise LookupError(f"No food with id {food_id}")
+    if row["kind"] == "recipe" and row["kcal_100g"] is None:
+        raise MissingYieldError(
+            f"Recipe {row['name']!r} (id {food_id}) has no computed macros. "
+            f"Set cooked_yield_g and call recompute_recipe before reading its "
+            f"macros."
+        )
     return Macros(
         kcal=row["kcal_100g"] or 0.0,
         protein_g=row["protein_g_100g"] or 0.0,
@@ -117,7 +128,10 @@ def create_recipe(
     (bool), flex_min_g, flex_max_g, note.
 
     Recipe, components, and units are one transaction. A rejected component
-    must not leave an empty recipe behind.
+    must not leave an empty recipe behind — and if a yield was given, the
+    initial macro computation happens inside that same transaction, so a
+    nested recipe that turns out to have no cooked_yield_g of its own rolls
+    everything back rather than leaving a partially-written parent.
     """
     try:
         cur = conn.execute(
@@ -142,12 +156,13 @@ def create_recipe(
                 "INSERT INTO food_units (food_id, unit, grams) VALUES (?, ?, ?)",
                 (food_id, unit, grams),
             )
+        if cooked_yield_g is not None:
+            macros = _macros_resolved(conn, food_id, frozenset())
+            _write_computed_macros(conn, food_id, macros)
     except Exception:
         conn.rollback()
         raise
     conn.commit()
-    if cooked_yield_g is not None:
-        recompute_recipe(conn, food_id)
     return food_id
 
 
@@ -179,7 +194,7 @@ def _macros_resolved(
         )
 
     row = conn.execute(
-        "SELECT kind, name, kcal_100g, cooked_yield_g FROM foods WHERE id = ?",
+        "SELECT kind, name, cooked_yield_g FROM foods WHERE id = ?",
         (food_id,),
     ).fetchone()
     if row is None:
@@ -205,9 +220,9 @@ def _macros_resolved(
     return total.scale(100.0 / row["cooked_yield_g"])
 
 
-def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
-    """Recompute and cache a recipe's per-100 g macros."""
-    macros = _macros_resolved(conn, food_id, frozenset())
+def _write_computed_macros(conn: sqlite3.Connection, food_id: int, macros: Macros) -> None:
+    """Write computed per-100 g macros to a food row. Does not commit — the
+    caller decides the transaction boundary."""
     conn.execute(
         "UPDATE foods SET kcal_100g = ?, protein_g_100g = ?, fat_g_100g = ?, "
         "carb_g_100g = ?, fiber_g_100g = ?, computed_at = ? WHERE id = ?",
@@ -216,6 +231,12 @@ def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
             macros.fiber_g, datetime.now(timezone.utc).isoformat(), food_id,
         ),
     )
+
+
+def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
+    """Recompute and cache a recipe's per-100 g macros."""
+    macros = _macros_resolved(conn, food_id, frozenset())
+    _write_computed_macros(conn, food_id, macros)
     conn.commit()
     return macros
 
