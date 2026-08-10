@@ -2534,6 +2534,266 @@ git commit -m "test: add golden-file test reproducing Keto Plan A totals"
 
 ---
 
+### Task 11: Cronometer recipe CSV import
+
+**Files:**
+- Create: `src/yolk/sources/cronometer.py`
+- Test: `tests/test_cronometer.py`
+
+**Interfaces:**
+- Consumes: `Macros` (Task 2), `create_item` (Task 4).
+- Produces: frozen dataclass `CronometerRow` (fields `food_id: str`, `name: str`, `serving_label: str`, `serving_g: float`, `macros: Macros` — macros already normalized to per 100 g); `parse_amount(text: str) -> tuple[str, float]`; `parse_file(path: Path) -> list[CronometerRow]`; `import_file(conn, path: Path, *, role: str) -> list[int]`.
+
+**Independent of the checkpoint.** This task does not block Tasks 9–10 and can be done
+before or after them.
+
+The export is a flattened CSV: one row per recipe, roughly a hundred nutrient columns,
+**no ingredient breakdown**. Rows therefore import as `kind='item'` — a finished dish
+with known macros and a known portion weight behaves exactly like a purchased item.
+Recipes whose composition matters still go through `create_recipe`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_cronometer.py`:
+
+```python
+from pathlib import Path
+
+import pytest
+
+from yolk.sources import cronometer
+
+EXAMPLES = Path(__file__).parent.parent / "examples"
+BARS_CSV = EXAMPLES / "cronometer_recipe_1.csv"
+PITAS_CSV = EXAMPLES / "cronometer_recipe_2.csv"
+
+
+def test_parse_amount_splits_label_and_grams():
+    label, grams = cronometer.parse_amount("servings  — 169g")
+    assert label == "servings"
+    assert grams == pytest.approx(169.0)
+
+
+def test_parse_amount_handles_multiword_label():
+    label, grams = cronometer.parse_amount("pita quarter  — 54g")
+    assert label == "pita quarter"
+    assert grams == pytest.approx(54.0)
+
+
+def test_parse_amount_rejects_unparseable():
+    with pytest.raises(ValueError):
+        cronometer.parse_amount("2 servings")
+
+
+def test_parse_file_normalizes_to_per_100g():
+    rows = cronometer.parse_file(BARS_CSV)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.name == "Baked Vanilla Protein Oatmeal Breakfast Bars"
+    assert row.serving_g == pytest.approx(169.0)
+    # 316.75 kcal per 169 g
+    assert row.macros.kcal == pytest.approx(187.43, abs=0.01)
+    assert row.macros.protein_g == pytest.approx(11.67, abs=0.01)
+    assert row.macros.fat_g == pytest.approx(4.49, abs=0.01)
+    assert row.macros.carb_g == pytest.approx(25.34, abs=0.01)
+    assert row.macros.fiber_g == pytest.approx(4.10, abs=0.01)
+
+
+def test_parse_file_second_sample():
+    rows = cronometer.parse_file(PITAS_CSV)
+    row = rows[0]
+    assert row.name == "Lebanese Meat Stuffed Pitas (Arayes)"
+    assert row.serving_g == pytest.approx(54.0)
+    assert row.macros.kcal == pytest.approx(210.33, abs=0.01)
+    assert row.macros.protein_g == pytest.approx(17.56, abs=0.01)
+
+
+def test_parse_file_skips_trailing_blank_rows():
+    """Both sample files end with an empty line."""
+    assert len(cronometer.parse_file(PITAS_CSV)) == 1
+
+
+def test_columns_are_read_by_header_not_position():
+    """Guards the failure mode: reading Fat off the wrong offset gives 43.09."""
+    row = cronometer.parse_file(BARS_CSV)[0]
+    fat_per_serving = row.macros.fat_g * row.serving_g / 100.0
+    assert fat_per_serving == pytest.approx(7.59, abs=0.01)
+
+
+def test_import_file_creates_item_with_serving_unit(db):
+    ids = cronometer.import_file(db, BARS_CSV, role="carb")
+    assert len(ids) == 1
+    row = db.execute(
+        "SELECT kind, name, source, source_ref, kcal_100g FROM foods WHERE id = ?",
+        (ids[0],),
+    ).fetchone()
+    assert row["kind"] == "item"
+    assert row["source"] == "cronometer"
+    assert row["source_ref"] == "71976045"
+    assert row["kcal_100g"] == pytest.approx(187.43, abs=0.01)
+
+    unit = db.execute(
+        "SELECT unit, grams FROM food_units WHERE food_id = ?", (ids[0],)
+    ).fetchone()
+    assert unit["unit"] == "servings"
+    assert unit["grams"] == pytest.approx(169.0)
+
+
+def test_imported_portion_macros_round_trip(db):
+    """One serving must reproduce the CSV's own per-serving numbers."""
+    from yolk.foods import portion_macros
+
+    ids = cronometer.import_file(db, PITAS_CSV, role="protein")
+    m = portion_macros(db, ids[0], 1, "pita quarter")
+    assert m.kcal == pytest.approx(113.58, abs=0.01)
+    assert m.protein_g == pytest.approx(9.48, abs=0.01)
+    assert m.fat_g == pytest.approx(4.04, abs=0.01)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `uv run pytest tests/test_cronometer.py -v`
+Expected: FAIL — `ImportError: cannot import name 'cronometer' from 'yolk.sources'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `src/yolk/sources/cronometer.py`:
+
+```python
+"""Cronometer recipe CSV import.
+
+The export is one row per recipe with roughly a hundred nutrient columns and
+no ingredient breakdown, so rows become items rather than recipes. The Amount
+column carries both the serving label and its gram weight, which gives us the
+per-100 g normalization and a food_units row in a single parse.
+
+Columns are addressed by header name. Positional parsing on a file this wide
+produces plausible-looking garbage — the Fat column sits next to a run of
+amino acid columns with similar magnitudes.
+"""
+
+from __future__ import annotations
+
+import csv
+import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+
+from yolk.foods import create_item
+from yolk.macros import Macros
+
+# label, then an em dash / en dash / hyphen, then a gram weight
+AMOUNT_RE = re.compile(r"^\s*(?P<label>.*?)\s*[—–-]\s*(?P<grams>[\d.]+)\s*g\s*$")
+
+COL_KCAL = "Energy (kcal)"
+COL_PROTEIN = "Protein (g)"
+COL_FAT = "Fat (g)"
+COL_CARB = "Carbs (g)"
+COL_FIBER = "Fiber (g)"
+
+
+@dataclass(frozen=True)
+class CronometerRow:
+    food_id: str
+    name: str
+    serving_label: str
+    serving_g: float
+    macros: Macros  # already per 100 g
+
+
+def parse_amount(text: str) -> tuple[str, float]:
+    """Split an Amount cell into its serving label and gram weight.
+
+    >>> parse_amount("servings  — 169g")
+    ('servings', 169.0)
+    """
+    match = AMOUNT_RE.match(text)
+    if not match:
+        raise ValueError(
+            f"Cannot parse serving weight from Amount cell {text!r}. Expected "
+            f"something like 'servings — 169g'."
+        )
+    return match.group("label").strip(), float(match.group("grams"))
+
+
+def _float(row: dict[str, str], column: str) -> float:
+    value = (row.get(column) or "").strip()
+    return float(value) if value else 0.0
+
+
+def parse_file(path: Path) -> list[CronometerRow]:
+    """Parse a Cronometer recipe CSV into per-100 g rows."""
+    out: list[CronometerRow] = []
+    with Path(path).open(newline="", encoding="utf-8-sig") as handle:
+        for raw in csv.DictReader(handle):
+            food_id = (raw.get("Food ID") or "").strip()
+            if not food_id:
+                continue  # trailing blank line
+
+            label, serving_g = parse_amount(raw["Amount"])
+            if serving_g <= 0:
+                raise ValueError(
+                    f"Non-positive serving weight for {raw.get('Food Name')!r}"
+                )
+
+            factor = 100.0 / serving_g
+            out.append(
+                CronometerRow(
+                    food_id=food_id,
+                    name=(raw.get("Food Name") or "").strip(),
+                    serving_label=label,
+                    serving_g=serving_g,
+                    macros=Macros(
+                        kcal=_float(raw, COL_KCAL),
+                        protein_g=_float(raw, COL_PROTEIN),
+                        fat_g=_float(raw, COL_FAT),
+                        carb_g=_float(raw, COL_CARB),
+                        fiber_g=_float(raw, COL_FIBER),
+                    ).scale(factor),
+                )
+            )
+    return out
+
+
+def import_file(conn: sqlite3.Connection, path: Path, *, role: str) -> list[int]:
+    """Import every recipe row in a CSV as an item, returning the new food ids."""
+    ids: list[int] = []
+    for row in parse_file(path):
+        ids.append(
+            create_item(
+                conn,
+                name=row.name,
+                role=role,
+                macros=row.macros,
+                source="cronometer",
+                source_ref=row.food_id,
+                verified=False,
+                units={row.serving_label: row.serving_g},
+            )
+        )
+    return ids
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `uv run pytest tests/test_cronometer.py -v`
+Expected: 9 passed.
+
+- [ ] **Step 5: Run the whole suite**
+
+Run: `uv run pytest -v`
+Expected: all passing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/yolk/sources/cronometer.py tests/test_cronometer.py
+git commit -m "feat: import Cronometer recipe CSVs as items with serving units"
+```
+
+---
+
 ## Deferred: the curated USDA starter set
 
 Spec §10 step 4 pairs the USDA client with seeding a curated starter set of 60–80
@@ -2563,4 +2823,3 @@ Each of these gets its own plan, in this order, after the checkpoint holds:
 4. Inventory and `gap_list()`.
 5. Excel export via `openpyxl`.
 6. Open Food Facts barcode import.
-7. Cronometer recipe JSON import — blocked until a real export lands in `examples/`.
