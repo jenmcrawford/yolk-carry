@@ -103,6 +103,34 @@ def test_fat_and_carb_judged_as_percentages_not_grams(db):
     assert result.within_tolerance["carb_pct"] is False
 
 
+def test_fat_and_carb_pass_when_proportions_match_even_if_calories_miss(db):
+    """Percent-of-calories and grams-vs-target-grams only diverge when actual
+    calories differ from target while proportions stay on target. Here the
+    day is exactly half the target calories but has identical fat/carb/protein
+    proportions, so percent-based judging must pass fat_pct and carb_pct even
+    though kcal and protein_g (grams-based) fail hard."""
+    pid = create_person(db, "Jen")
+    profile_id = create_profile(
+        db, pid, name="test", effective_on="2026-01-01",
+        kcal=1000, fat_pct=36, carb_pct=24, protein_pct=40,
+    )
+    # 100 g of this food = 500 kcal, half the 1000 kcal target, but
+    # 20 g fat (36%), 30 g carb (24%), 50 g protein (40%) match proportions
+    # exactly: 20*9=180, 30*4=120, 50*4=200, sum=500.
+    food = create_item(
+        db, name="Half Portion, Right Ratio", role="protein",
+        macros=Macros(kcal=500, protein_g=50, fat_g=20, carb_g=30), source="manual",
+    )
+    plan_id = create_day_plan(db, pid, profile_id, name="Half Day")
+    add_entry(db, plan_id, slot_no=1, food_id=food, qty=100, unit="g")
+
+    result = evaluate(db, plan_id)
+    assert result.within_tolerance["fat_pct"] is True
+    assert result.within_tolerance["carb_pct"] is True
+    assert result.within_tolerance["kcal"] is False
+    assert result.within_tolerance["protein_g"] is False
+
+
 def test_evaluate_does_not_mutate(db, simple_plan):
     before = db.execute(
         "SELECT id, qty, unit FROM day_plan_entries WHERE day_plan_id = ? "
