@@ -99,3 +99,23 @@ def test_add_unit_sets_default_display(db):
         "SELECT is_default_display FROM food_units WHERE food_id = ?", (food_id,)
     ).fetchone()
     assert row["is_default_display"] == 1
+
+
+def test_failed_unit_insert_leaves_no_orphan_food(db):
+    import sqlite3
+
+    # Attempt to create a food with a unit that violates the grams > 0 CHECK constraint.
+    # This should raise IntegrityError and roll back the entire transaction,
+    # leaving no food row behind.
+    with pytest.raises(sqlite3.IntegrityError):
+        create_item(
+            db, name="Bad Measurement", role="protein",
+            macros=Macros(kcal=100, protein_g=20, fat_g=1, carb_g=0),
+            source="test",
+            units={"invalid": 0},  # Violates food_units.grams > 0
+        )
+    # Verify the food row was rolled back, not just the unit insert.
+    count = db.execute(
+        "SELECT COUNT(*) as cnt FROM foods WHERE name = 'Bad Measurement'"
+    ).fetchone()["cnt"]
+    assert count == 0
