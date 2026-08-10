@@ -1,0 +1,113 @@
+{
+  "plan_name": "Keto Meal Plan A",
+  "profile": {
+    "name": "training",
+    "effective_on": "2026-07-14",
+    "kcal": 2150,
+    "fat_pct": 34,
+    "carb_pct": 28,
+    "protein_pct": 38
+  },
+  "reported_totals": {
+    "kcal": 2146.35,
+    "protein_g": 197.455,
+    "fat_g": 83.54,
+    "carb_g": 150.94
+  },
+  "slots": [
+    {
+      "slot_no": 1,
+      "name": "Meal 1 - 6:30am Wake Up",
+      "entries": []
+    },
+    {
+      "slot_no": 2,
+      "name": "Meal 2 - 8:30am Breakfast - Yogurt + granola",
+      "entries": [
+        {
+          "food": "Oikos Triple Zero Non Fat Greek Yogurt",
+          "qty": 1,
+          "unit": "container",
+          "role": "protein",
+          "macros_100g": {"kcal": 79.87, "protein_g": 9.98, "fat_g": 0.0, "carb_g": 9.98},
+          "units": {"container": 150.25},
+          "source": "label",
+          "source_note": "PDF states serving as '1, 5.3oz container' with per-serving macros kcal 120, fat 0, carb 15, protein 15. Converted 5.3 oz -> 150.25 g using standard 28.349523125 g/oz, then scaled to per-100g. Assumes the '5.3oz' is a net-weight ounce (standard for a semi-solid dairy cup label), not a fluid ounce."
+        }
+      ]
+    },
+    {
+      "slot_no": 3,
+      "name": "Meal 3 - 11:00am Snack",
+      "entries": [
+        {
+          "food": "beef jerky",
+          "qty": 1,
+          "unit": "oz",
+          "role": "protein",
+          "macros_100g": {"kcal": 409.18, "protein_g": 33.16, "fat_g": 25.75, "carb_g": 10.93},
+          "units": {},
+          "source": "manual",
+          "source_note": "PDF: 1 ounce, kcal 116, fat 7.3, carb 3.1, protein 9.4. Converted to per-100g using standard 28.349523125 g/oz."
+        },
+        {
+          "food": "Pork Rinds",
+          "qty": 2,
+          "unit": "oz",
+          "role": "protein",
+          "macros_100g": {"kcal": 560.86, "protein_g": 56.44, "fat_g": 35.27, "carb_g": 0.0},
+          "units": {},
+          "source": "manual",
+          "source_note": "PDF: 2 ounce, kcal 318, fat 20, carb 0, protein 32. Converted to per-100g using standard 28.349523125 g/oz."
+        }
+      ]
+    },
+    {
+      "slot_no": 4,
+      "name": "Meal 4 - 2:00pm Lunch - Salad",
+      "entries": [
+        {
+          "food": "Grilled or baked chicken breast",
+          "qty": 6,
+          "unit": "oz",
+          "role": "protein",
+          "macros_100g": {"kcal": 164.02, "protein_g": 31.04, "fat_g": 3.53, "carb_g": 0.0},
+          "units": {},
+          "source": "manual",
+          "source_note": "PDF: 6 oz, kcal 279, fat 6, carb 0, protein 52.8. Converted to per-100g using standard 28.349523125 g/oz."
+        }
+      ]
+    },
+    {
+      "slot_no": 5,
+      "name": "Meal 5 - 3:00pm Intraworkout - sip throughout workout",
+      "entries": []
+    },
+    {
+      "slot_no": 6,
+      "name": "Meal 6 - 6:00pm Dinner - Pasta",
+      "entries": [
+        {
+          "food": "Ground beef 85/15",
+          "qty": 4,
+          "unit": "oz",
+          "role": "protein",
+          "macros_100g": {"kcal": 257.5, "protein_g": 27.87, "fat_g": 15.17, "carb_g": 0.0},
+          "units": {},
+          "source": "manual",
+          "source_note": "PDF: 4 ounces, kcal 292, fat 17.2, carb 0, protein 31.6. Converted to per-100g using standard 28.349523125 g/oz."
+        },
+        {
+          "food": "Banza Chickpea Rotini Noodles",
+          "qty": 1.5,
+          "unit": "oz",
+          "role": "carb",
+          "macros_100g": {"kcal": 335.1, "protein_g": 19.4, "fat_g": 5.29, "carb_g": 52.91},
+          "units": {},
+          "source": "label",
+          "source_note": "PDF row labeled '(measured dry)': 1.5 oz, kcal 142.5, fat 2.25, carb 22.5, protein 8.25. Converted to per-100g using standard 28.349523125 g/oz. Value is per dry weight, not cooked weight."
+        }
+      ]
+    }
+  ]
+}
