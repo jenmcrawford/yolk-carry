@@ -1,7 +1,17 @@
 """Golden-file test: reproduce a coach-authored plan from its own ingredients.
 
-This validates the whole chain — unit conversion, per-100 g normalization, and
-aggregation — against known-good hand-authored output.
+This validates aggregation across slots, per-food unit lookup (the fixture reuses
+unit names like "packet" and "scoop" with different gram weights per food), the
+per-100 g scale convention, and completeness of the transcribed plan — all against
+a real coach-authored plan's own stated totals.
+
+It does NOT validate that any individual gram-per-unit weight is factually correct.
+Each fixture entry's `macros_100g` was derived as `PDF_per_serving / grams * 100`
+using that same `units` weight, so a uniformly wrong weight is a divide-then-multiply
+identity and cancels out invisibly — only an *inconsistent* error (grams changed on
+one side but not the other) moves the totals enough to fail. The factual accuracy of
+each gram weight is instead asserted by that entry's `source_note` in the fixture,
+citing a product label or a USDA `fdcId`.
 """
 
 import json

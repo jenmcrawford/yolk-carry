@@ -482,10 +482,24 @@ than a stack trace.
 Test-driven throughout.
 
 **Golden file — highest value.** Take a coach-authored plan from `examples/`, enter its
-ingredients, and confirm the engine reproduces the PDF's macro totals within tolerance. This
-validates the entire chain — unit conversion, per-100g normalization, aggregation — against
-known-good hand-authored output. Keto Meal Plan A is the first target; the Emergency plans
-exercise the rest-day profile.
+ingredients, and confirm the engine reproduces the PDF's own stated macro totals within
+tolerance. Keto Meal Plan A is the first target; the Emergency plans exercise the rest-day
+profile.
+
+**What it proves, precisely.** Aggregation across slots, per-food unit lookup (the Keto A
+fixture has `packet` meaning 22 g for one food and 16 g for another, and `scoop` meaning 32 g,
+50 g, and 34 g for three), the per-100 g scale convention, and completeness of the transcribed
+plan.
+
+**What it cannot prove.** That any individual gram-per-unit weight is factually correct. The
+fixture's `macros_100g` is derived by dividing the PDF's per-serving figures *by that same
+weight*, which the engine then multiplies back — so a self-consistent error cancels exactly.
+This was verified by mutation: changing a packet weight from 22 g to 40 g while rescaling
+`macros_100g` to match left the computed totals bit-for-bit identical. Changing it *without*
+rescaling moved totals 3% and failed the test, which is where the test has teeth.
+
+Gram-weight accuracy comes from provenance, not from this test: every entry's `source_note`
+cites a product label or a USDA `fdcId`, and `verified` marks whether a human checked it.
 
 **Property tests.**
 - `resolve_flex` never returns a quantity outside `[flex_min_g, flex_max_g]`.
