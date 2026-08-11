@@ -52,6 +52,24 @@ headroom); calories stay hard at ±1%; fat and carb stay at ±3 percentage point
 default, and the assertion in `tests/test_people.py`. No logic reads a hardcoded tolerance —
 `evaluate()` sources all three from the profile row, which is what made this a data change.
 
+**D. Final-review fixes (all tasks).** The whole-branch review found no Critical issues but
+two Important ones, both fixed before merge. First, the regression test added in Task 4's fix
+round to guard `create_item`'s rollback never exercised it — it passed an invalid `source`, so
+the food insert failed before the unit insert was reached and the "no orphan row" assertion
+was vacuously true. Second, `create_slot` had the same partial-write shape Amendment A
+eliminated in `foods.py`: a slot row followed by an unguarded loop of role inserts. Both are
+now wrapped and tested, as is `add_unit`. Also applied: three schema guards (profile
+percentages must sum to 100; `slot_template_roles.role` takes the same enum CHECK as
+`foods.role`; items must carry all four macros, not just calories), `PRAGMA user_version = 1`,
+two replaced vacuous tests, and two corrected docstrings.
+
+**Deferred deliberately to the next plan:** seven writers call `conn.commit()` unconditionally
+with no rollback, so callers cannot compose two writes atomically. `resolve_flex()` and
+`substitute()` are both inherently multi-row and will define the real requirement — that is
+the right moment to introduce a `transaction(conn)` context manager and stop the low-level
+writers from committing. Also deferred: the response cache's CWD-relative path, unifying the
+error taxonomy under `YolkError`, and a person/profile ownership guard on `create_day_plan`.
+
 **B. `macros_per_100g` must refuse uncomputed recipes (Tasks 4 and 5).** It coalesced NULL
 macro columns to `0.0`. Harmless for items — `CHECK (kind = 'recipe' OR kcal_100g IS NOT
 NULL)` guarantees they have macros — but recipes are allowed NULL macros, so calling
@@ -1720,7 +1738,7 @@ git commit -m "feat: add USDA FoodData Central client with response cache"
 
 **Interfaces:**
 - Consumes: `Macros`, `profile_targets` (Task 2).
-- Produces: `create_person(conn, name) -> int`; `create_profile(conn, person_id, *, name, effective_on, kcal, fat_pct, carb_pct, protein_pct, kcal_tol_pct=1.0, protein_tol_g=2.0, macro_pct_tol=3.0) -> int`; `active_profile(conn, person_id, name, on_date: str) -> sqlite3.Row`; `targets_for_profile(conn, profile_id) -> Macros`; `create_slot(conn, person_id, profile_id, *, slot_no, name, time_of_day, roles=(), portable=False, fixed=False, notes=None) -> int`.
+- Produces: `create_person(conn, name) -> int`; `create_profile(conn, person_id, *, name, effective_on, kcal, fat_pct, carb_pct, protein_pct, kcal_tol_pct=1.0, protein_tol_g=8.0, macro_pct_tol=3.0) -> int`; `active_profile(conn, person_id, name, on_date: str) -> sqlite3.Row`; `targets_for_profile(conn, profile_id) -> Macros`; `create_slot(conn, person_id, profile_id, *, slot_no, name, time_of_day, roles=(), portable=False, fixed=False, notes=None) -> int`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2584,7 +2602,14 @@ git commit -m "test: add golden-file test reproducing Keto Plan A totals"
 
 ---
 
-### Task 11: Cronometer recipe CSV import
+### Task 11: Cronometer recipe CSV import — NOT IMPLEMENTED
+
+> **Status:** deferred at the project owner's request during execution. Tasks 1–10 are
+> complete; this task was never started. It is independent of the checkpoint and its sample
+> CSVs are already committed in `examples/`, so it can be picked up at any time — either as
+> the first task of the next plan or on its own. Recorded here explicitly so it does not fall
+> between plans.
+
 
 **Files:**
 - Create: `src/yolk/sources/cronometer.py`
