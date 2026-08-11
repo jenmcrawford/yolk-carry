@@ -17,7 +17,7 @@
 - **Never estimate a recipe yield.** A recipe without `cooked_yield_g` refuses to compute per-100 g.
 - **Never insert a partial food row.** API failures raise; they do not write.
 - Person dimension is present in every person-scoped table. Jen is person 1.
-- Tolerance defaults: kcal ±1%, protein ±2 g, fat% and carb% ±3 points. Stored per profile, never hardcoded in logic.
+- Tolerance defaults: kcal ±1%, protein ±8 g, fat% and carb% ±3 points. Stored per profile, never hardcoded in logic. (Protein was ±2 g until Task 9 measured the source plan — see Amendment C.)
 - Secrets come from `.env` (`USDA_API_KEY`). `.env` is gitignored and must stay that way.
 - Commit after every task. Conventional commit prefixes (`feat:`, `test:`, `chore:`).
 
@@ -41,6 +41,16 @@ the single `conn.commit()`. The post-commit `recompute_recipe` call is removed. 
 food_id, macros)` helper that does not commit; `recompute_recipe` remains public and commits
 for standalone use. Covered by a test asserting that a failed nested recompute leaves neither
 a `foods` row nor `food_components` rows behind.
+
+**C. Protein tolerance widened from ±2 g to ±8 g (Tasks 1, 7).** Task 9's extraction measured
+Keto Plan A's own stated totals against its profile: calories land within 0.17%, but protein
+is 197.455 g against a 204.25 g target — a 6.8 g (3.33%) miss. A ±2 g default would classify
+a professionally authored plan as out of band, making the tolerance an aspiration rather than
+a description of the framework. Owner ruled: protein default becomes ±8 g (~4% with
+headroom); calories stay hard at ±1%; fat and carb stay at ±3 percentage points. Changed in
+`schema.sql`'s `macro_profiles.protein_tol_g` DEFAULT, `people.py`'s `create_profile`
+default, and the assertion in `tests/test_people.py`. No logic reads a hardcoded tolerance —
+`evaluate()` sources all three from the profile row, which is what made this a data change.
 
 **B. `macros_per_100g` must refuse uncomputed recipes (Tasks 4 and 5).** It coalesced NULL
 macro columns to `0.0`. Harmless for items — `CHECK (kind = 'recipe' OR kcal_100g IS NOT

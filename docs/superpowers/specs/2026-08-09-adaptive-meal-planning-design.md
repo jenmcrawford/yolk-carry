@@ -77,17 +77,32 @@ composition changes is a new row — not a code edit, and not a loss of history.
 | Target | Tolerance | Treatment |
 |---|---|---|
 | Calories | ±1% | Hard — heavily weighted in the solver |
-| Protein | ±2 g | Hard — heavily weighted |
+| Protein | ±8 g | Moderate — see measurement below |
 | Fat % | ±3 points | Band — lightly weighted |
 | Carb % | ±3 points | Band — lightly weighted |
 
-Rationale: calories and protein are what the framework is actually defending. Fat and carb
-trade against each other and matter directionally. The existing hand-authored plans land
-within roughly ±1.5% on all four, but that appears to be an artifact of manual tuning
-rather than a stated requirement.
+Rationale: calories are what the framework is actually defending. Fat and carb trade against
+each other and matter directionally.
 
-**Tolerance is stored per profile**, so tightening it later is a data change. If the coach
-confirms ±1.5% on all four is a genuine requirement, only the weights change.
+**Measured against the source material.** Keto Plan A's own stated totals are 2146.35 kcal,
+83.54 g fat, 150.94 g carb, 197.455 g protein, against a 2150 kcal / 34-28-38 profile:
+
+| Target | Goal | Actual | Delta |
+|---|---|---|---|
+| Calories | 2150 | 2146.35 | −3.65 (0.17%) |
+| Protein | 204.25 g | 197.455 g | **−6.80 g (3.33%)** |
+| Fat % | 34.00% | 35.03% | +1.03 points |
+| Carb % | 28.00% | 28.13% | +0.13 points |
+
+So the earlier assumption that the hand-authored plans hit ±1.5% on all four **was wrong.**
+Calories are tight — 0.17% — but protein is off by 6.8 g. An original ±2 g protein rule
+would have classified a professionally authored plan as out of band, which would make the
+tolerance model describe an aspiration rather than the framework.
+
+Protein tolerance is therefore **±8 g** (~4% of target, with headroom). Calories stay hard at
+±1%; that is the constraint doing the real work.
+
+**Tolerance is stored per profile**, so tightening it later is a data change, not a code edit.
 
 ### Meal slots
 
@@ -533,8 +548,10 @@ automation becomes obvious rather than speculative.
 
 ### Remaining, none blocking
 
-1. **Is ±1.5% on all four macros a coach requirement or an artifact of hand-tuning?**
-   Stored as per-profile data, so confirming later costs a row update.
+1. ~~**Is ±1.5% on all four macros a coach requirement or an artifact of hand-tuning?**~~
+   **Resolved by measurement** — see §2. Keto Plan A misses protein by 6.8 g (3.33%), so
+   ±1.5% on all four was never achieved. Protein tolerance set to ±8 g. Worth confirming with
+   the coach whether that 6.8 g is intentional slack, but it no longer blocks anything.
 2. **Which store receipts are digitally accessible, and in what format?** Deferred with the
    whole capture pipeline.
 3. **Does the freezer bank have a known current state, or start empty?** Assume empty and
