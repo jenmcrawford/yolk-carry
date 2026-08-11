@@ -18,7 +18,18 @@
     {
       "slot_no": 1,
       "name": "Meal 1 - 6:30am Wake Up",
-      "entries": []
+      "entries": [
+        {
+          "food": "Buff Chick Coffee",
+          "qty": 1,
+          "unit": "packet",
+          "role": "protein",
+          "macros_100g": {"kcal": 363.64, "protein_g": 81.82, "fat_g": 0.0, "carb_g": 4.55},
+          "units": {"packet": 22.0},
+          "source": "label",
+          "source_note": "PDF: 1 packet, kcal 80, fat 0, carb 1, protein 18. Gram weight (22 g/packet) supplied by the owner from the product label. 1 packet = 22.0 g; scaled to per-100g."
+        }
+      ]
     },
     {
       "slot_no": 2,
@@ -43,6 +54,26 @@
           "units": {"tablespoon": 16.0},
           "source": "usda",
           "source_note": "PDF: 0.5 tablespoon, kcal 47, fat 4.05, carb 1.55, protein 2. Gram weight (16.0 g/tbsp) from USDA FDC id 174266 'Peanut butter, smooth style, with salt' (SR Legacy), foodPortions entry {amount: 2.0, modifier: 'tbsp', gramWeight: 32.0} -> 32.0/2.0 = 16.0 g/tbsp. Macros are the PDF's own, NOT USDA's. 0.5 tbsp = 8.0 g; scaled to per-100g."
+        },
+        {
+          "food": "Pea Protein Powder",
+          "qty": 0.5,
+          "unit": "scoop",
+          "role": "protein",
+          "macros_100g": {"kcal": 371.88, "protein_g": 74.38, "fat_g": 7.19, "carb_g": 3.12},
+          "units": {"scoop": 32.0},
+          "source": "label",
+          "source_note": "PDF: 0.5 scoop, kcal 59.5, fat 1.15, carb 0.5, protein 11.9. Gram weight (32 g/scoop) supplied by the owner from the product label. 0.5 scoop = 16.0 g; scaled to per-100g."
+        },
+        {
+          "food": "TJ grainless granola",
+          "qty": 0.5,
+          "unit": "cup",
+          "role": "carb",
+          "macros_100g": {"kcal": 566.25, "protein_g": 15.0, "fat_g": 46.25, "carb_g": 31.25},
+          "units": {"cup": 80.0},
+          "source": "label",
+          "source_note": "PDF: 0.5 cup, kcal 226.5, fat 18.5, carb 12.5, protein 6. Owner's product label states 1 serving = 0.75 cup = 60 g, so grams-per-cup = 60 / 0.75 = 80.0 g/cup (not 60 -- 60 is the 0.75-cup serving weight, not the per-cup weight). 0.5 cup = 40.0 g; scaled to per-100g."
         }
       ]
     },
@@ -125,13 +156,54 @@
           "units": {"wedge": 7.0},
           "source": "usda",
           "source_note": "PDF: 3 wedge, kcal 3, fat 0, carb 1.5, protein 0.3. Gram weight (7.0 g/wedge) from USDA FDC id 167746 'Lemons, raw, without peel' (SR Legacy), foodPortions entry {amount: 1.0, modifier: 'wedge or slice (1/8 of one 2-1/8\" dia lemon)', gramWeight: 7.0}. Macros are the PDF's own. 3 wedge = 21.0 g; scaled to per-100g."
+        },
+        {
+          "food": "Mixed Green Salad",
+          "qty": 4,
+          "unit": "cup",
+          "role": "veg",
+          "macros_100g": {"kcal": 19.15, "protein_g": 1.79, "fat_g": 0.28, "carb_g": 3.62},
+          "units": {"cup": 47.0},
+          "source": "usda",
+          "source_note": "PDF: 4 cup, kcal 36, fat 0.52, carb 6.8, protein 3.36. PROXY: no FDC entry represents a blended 'mixed greens' salad product; used USDA FDC id 169247 'Lettuce, cos or romaine, raw' (SR Legacy), foodPortions entry {amount: 1.0, modifier: 'cup shredded', gramWeight: 47.0} as an explicit stand-in for the cup weight only. This gram weight provably cancels in this fixture: macros_100g is the PDF's per-serving macro divided by this weight, and the engine multiplies it back by the same weight when evaluating, so the reproduced totals are identical regardless of which leafy-green cup weight is used here -- only the realism of the stored food_units row is affected. Macros are the PDF's own, not USDA's. 4 cup = 188.0 g; scaled to per-100g."
         }
       ]
     },
     {
       "slot_no": 5,
       "name": "Meal 5 - 3:00pm Intraworkout - sip throughout workout",
-      "entries": []
+      "entries": [
+        {
+          "food": "Karbolyn",
+          "qty": 0.5,
+          "unit": "scoop",
+          "role": "supplement",
+          "macros_100g": {"kcal": 400.0, "protein_g": 0.0, "fat_g": 0.0, "carb_g": 100.0},
+          "units": {"scoop": 50.0},
+          "source": "label",
+          "source_note": "PDF: 0.5 scoop, kcal 100, fat 0, carb 25, protein 0 (fiber 0, sugar absent -- column alignment confirmed against the page-1 table-2 extraction, which shows Calories/Fat/Carbs/Protein/Fiber columns populated as 100/0/25/0/0 and an empty Sugar column for all three Meal 5 rows; this matches the standard header order Calories, Fat, Carbs, Protein, Fiber, Sugar with no shift). Gram weight (50 g/scoop) supplied by the owner from the product label. 0.5 scoop = 25.0 g; scaled to per-100g."
+        },
+        {
+          "food": "Liquid IV Hydration",
+          "qty": 1,
+          "unit": "packet",
+          "role": "supplement",
+          "macros_100g": {"kcal": 312.5, "protein_g": 0.0, "fat_g": 0.0, "carb_g": 68.75},
+          "units": {"packet": 16.0},
+          "source": "label",
+          "source_note": "PDF: 1 packet, kcal 50, fat 0, carb 11, protein 0 (fiber 0, sugar absent -- same Meal 5 column check as Karbolyn). Gram weight (16 g/packet) supplied by the owner from the product label. 1 packet = 16.0 g; scaled to per-100g."
+        },
+        {
+          "food": "Highly Branched Cyclic Dextrin",
+          "qty": 0.75,
+          "unit": "scoop",
+          "role": "supplement",
+          "macros_100g": {"kcal": 352.94, "protein_g": 0.0, "fat_g": 0.0, "carb_g": 94.12},
+          "units": {"scoop": 34.0},
+          "source": "label",
+          "source_note": "PDF: 0.75 scoop, kcal 90, fat 0, carb 24, protein 0 (fiber 0, sugar absent -- same Meal 5 column check as Karbolyn). Gram weight (34 g/scoop) supplied by the owner from the product label. 0.75 scoop = 25.5 g; scaled to per-100g."
+        }
+      ]
     },
     {
       "slot_no": 6,
