@@ -1,4 +1,5 @@
 PRAGMA foreign_keys = ON;
+PRAGMA user_version = 1;
 
 CREATE TABLE people (
     id      INTEGER PRIMARY KEY,
@@ -37,7 +38,10 @@ CREATE TABLE foods (
     notes           TEXT,
     UNIQUE (name, brand),
     -- items must carry macros; recipes may compute them later
-    CHECK (kind = 'recipe' OR kcal_100g IS NOT NULL)
+    CHECK (kind = 'recipe' OR (kcal_100g IS NOT NULL
+                               AND protein_g_100g IS NOT NULL
+                               AND fat_g_100g IS NOT NULL
+                               AND carb_g_100g IS NOT NULL))
 );
 
 CREATE TABLE food_tags (
@@ -112,7 +116,8 @@ CREATE TABLE macro_profiles (
     kcal_tol_pct    REAL NOT NULL DEFAULT 1.0,
     protein_tol_g   REAL NOT NULL DEFAULT 8.0,
     macro_pct_tol   REAL NOT NULL DEFAULT 3.0,
-    UNIQUE (person_id, name, effective_on)
+    UNIQUE (person_id, name, effective_on),
+    CHECK (abs(fat_pct + carb_pct + protein_pct - 100) < 0.5)
 );
 
 CREATE TABLE slot_templates (
@@ -131,7 +136,9 @@ CREATE TABLE slot_templates (
 CREATE TABLE slot_template_roles (
     id                  INTEGER PRIMARY KEY,
     slot_template_id    INTEGER NOT NULL REFERENCES slot_templates(id) ON DELETE CASCADE,
-    role                TEXT NOT NULL,
+    role                TEXT NOT NULL
+                        CHECK (role IN ('protein', 'carb', 'fat', 'veg',
+                                        'sauce', 'beverage', 'supplement')),
     min_count           INTEGER NOT NULL DEFAULT 1 CHECK (min_count >= 0),
     UNIQUE (slot_template_id, role)
 );

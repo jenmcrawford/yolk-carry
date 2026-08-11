@@ -1,8 +1,8 @@
 """Day plan construction and evaluation.
 
-evaluate() is pure: it reads, computes, and returns. Nothing in this module
-writes to a plan. Every other planning operation is built on top of it, so
-keeping it side-effect free is what makes the rest testable.
+evaluate() is pure: it reads, computes, and returns, writing nothing to a
+plan. Every other planning operation is built on top of it, so keeping
+evaluate() side-effect free is what makes the rest testable.
 """
 
 from __future__ import annotations

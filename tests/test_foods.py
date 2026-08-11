@@ -111,7 +111,7 @@ def test_failed_unit_insert_leaves_no_orphan_food(db):
         create_item(
             db, name="Bad Measurement", role="protein",
             macros=Macros(kcal=100, protein_g=20, fat_g=1, carb_g=0),
-            source="test",
+            source="manual",
             units={"invalid": 0},  # Violates food_units.grams > 0
         )
     # Verify the food row was rolled back, not just the unit insert.

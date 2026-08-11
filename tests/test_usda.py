@@ -31,7 +31,10 @@ def test_parse_macros_maps_nutrient_ids():
 
 
 def test_parse_macros_ignores_unmapped_nutrients():
-    """Sodium is present in the payload and must not land anywhere."""
+    """Sodium is present in the payload but Macros has no field for it, so
+    there is nowhere for it to land. This asserts exact field-by-field
+    equality against the mapped nutrients, which would catch a nutrient-ID
+    cross-mapping (e.g. sodium's amount landing in fat_g)."""
     m = usda.parse_macros(SAMPLE_PAYLOAD)
     assert m == Macros(kcal=120.0, protein_g=22.5, fat_g=2.62, carb_g=0.0, fiber_g=0.0)
 

@@ -51,11 +51,18 @@ def test_active_profile_missing_raises(db):
 
 
 def test_tolerances_default_to_spec_values(db):
+    """create_profile always passes all three tolerances explicitly, so
+    calling it here would read back Python's defaults, not schema.sql's.
+    Insert the row via raw SQL, omitting the tolerance columns, so the
+    values under test are the ones the schema itself supplies."""
     pid = create_person(db, "Jen")
-    profile_id = create_profile(
-        db, pid, name="rest", effective_on="2026-07-14",
-        kcal=2115, fat_pct=39, carb_pct=18, protein_pct=43,
+    cur = db.execute(
+        "INSERT INTO macro_profiles (person_id, name, effective_on, kcal, "
+        "fat_pct, carb_pct, protein_pct) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (pid, "rest", "2026-07-14", 2115, 39, 18, 43),
     )
+    db.commit()
+    profile_id = cur.lastrowid
     row = db.execute(
         "SELECT kcal_tol_pct, protein_tol_g, macro_pct_tol FROM macro_profiles "
         "WHERE id = ?", (profile_id,)
@@ -63,6 +70,28 @@ def test_tolerances_default_to_spec_values(db):
     assert row["kcal_tol_pct"] == 1.0
     assert row["protein_tol_g"] == 8.0
     assert row["macro_pct_tol"] == 3.0
+
+
+def test_failed_role_insert_leaves_no_orphan_slot(db):
+    """A duplicate role violates slot_template_roles' UNIQUE (slot_template_id,
+    role) constraint. That failure must roll back the slot_templates row too,
+    not leave a slot claiming fewer roles than requested."""
+    import sqlite3
+
+    pid = create_person(db, "Jen")
+    profile_id = create_profile(
+        db, pid, name="training", effective_on="2026-07-14",
+        kcal=2150, fat_pct=34, carb_pct=28, protein_pct=38,
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        create_slot(
+            db, pid, profile_id, slot_no=6, name="Dinner", time_of_day="18:00",
+            roles=("protein", "protein"),
+        )
+    count = db.execute(
+        "SELECT COUNT(*) AS n FROM slot_templates WHERE name = 'Dinner'"
+    ).fetchone()["n"]
+    assert count == 0
 
 
 def test_slot_with_roles(db):

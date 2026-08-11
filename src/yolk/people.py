@@ -89,17 +89,22 @@ def create_slot(
     fixed: bool = False,
     notes: str | None = None,
 ) -> int:
-    cur = conn.execute(
-        "INSERT INTO slot_templates (person_id, profile_id, slot_no, name, "
-        "time_of_day, portable, fixed, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (person_id, profile_id, slot_no, name, time_of_day,
-         int(portable), int(fixed), notes),
-    )
-    slot_id = cur.lastrowid
-    for role in roles:
-        conn.execute(
-            "INSERT INTO slot_template_roles (slot_template_id, role) VALUES (?, ?)",
-            (slot_id, role),
+    try:
+        cur = conn.execute(
+            "INSERT INTO slot_templates (person_id, profile_id, slot_no, name, "
+            "time_of_day, portable, fixed, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (person_id, profile_id, slot_no, name, time_of_day,
+             int(portable), int(fixed), notes),
         )
+        slot_id = cur.lastrowid
+        for role in roles:
+            conn.execute(
+                "INSERT INTO slot_template_roles (slot_template_id, role) "
+                "VALUES (?, ?)",
+                (slot_id, role),
+            )
+    except Exception:
+        conn.rollback()
+        raise
     conn.commit()
     return slot_id

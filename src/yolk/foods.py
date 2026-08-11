@@ -66,11 +66,15 @@ def add_unit(
     is_default_display: bool = False,
 ) -> None:
     """Record how many grams one of `unit` weighs for this specific food."""
-    conn.execute(
-        "INSERT INTO food_units (food_id, unit, grams, is_default_display) "
-        "VALUES (?, ?, ?, ?)",
-        (food_id, unit, grams, int(is_default_display)),
-    )
+    try:
+        conn.execute(
+            "INSERT INTO food_units (food_id, unit, grams, is_default_display) "
+            "VALUES (?, ?, ?, ?)",
+            (food_id, unit, grams, int(is_default_display)),
+        )
+    except Exception:
+        conn.rollback()
+        raise
     conn.commit()
 
 

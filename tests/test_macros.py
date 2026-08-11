@@ -21,6 +21,11 @@ def test_macros_scale():
     assert scaled.fiber_g == 3
 
 
+def test_macros_sum_folds_a_list():
+    total = sum([Macros(kcal=1), Macros(kcal=2)], Macros.zero())
+    assert total == Macros(kcal=3)
+
+
 def test_macros_sum_of_empty_is_zero():
     assert sum([], Macros.zero()) == Macros.zero()
 
