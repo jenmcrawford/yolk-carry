@@ -61,7 +61,7 @@ def test_tolerances_default_to_spec_values(db):
         "WHERE id = ?", (profile_id,)
     ).fetchone()
     assert row["kcal_tol_pct"] == 1.0
-    assert row["protein_tol_g"] == 2.0
+    assert row["protein_tol_g"] == 8.0
     assert row["macro_pct_tol"] == 3.0
 
 

@@ -110,7 +110,7 @@ CREATE TABLE macro_profiles (
     carb_pct        REAL NOT NULL,
     protein_pct     REAL NOT NULL,
     kcal_tol_pct    REAL NOT NULL DEFAULT 1.0,
-    protein_tol_g   REAL NOT NULL DEFAULT 2.0,
+    protein_tol_g   REAL NOT NULL DEFAULT 8.0,
     macro_pct_tol   REAL NOT NULL DEFAULT 3.0,
     UNIQUE (person_id, name, effective_on)
 );

@@ -28,7 +28,7 @@ def create_profile(
     carb_pct: float,
     protein_pct: float,
     kcal_tol_pct: float = 1.0,
-    protein_tol_g: float = 2.0,
+    protein_tol_g: float = 8.0,
     macro_pct_tol: float = 3.0,
 ) -> int:
     cur = conn.execute(
