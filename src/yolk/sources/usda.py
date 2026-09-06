@@ -27,6 +27,11 @@ NUTRIENT_FAT = 1004
 NUTRIENT_CARB = 1005
 NUTRIENT_FIBER = 1079
 
+# measureUnit names that are not units anyone cooks with: 'undetermined' is
+# FDC's placeholder, and RACC is the regulatory Reference Amount Customarily
+# Consumed, a label serving.
+PLACEHOLDER_MEASURE_UNITS = frozenset({"undetermined", "RACC"})
+
 
 def _api_key() -> str:
     load_dotenv()
@@ -122,6 +127,52 @@ def parse_macros(payload: dict) -> Macros:
     )
 
 
+def parse_portions(payload: dict) -> dict[str, float]:
+    """Gram weights for a food's display units, from FDC `foodPortions`.
+
+    This is where "1 medium onion" and "1 clove garlic" come from, and it is
+    the main defence against UnknownUnitError on whole foods.
+
+    Two traps, both of which produce plausible wrong numbers rather than
+    errors. First, `gramWeight` describes `amount` of the portion, not one of
+    it: ten onion rings weighing 60 g is 6 g per ring, so the weight must be
+    divided by the amount. Second, `measureUnit` is frequently the placeholder
+    'undetermined', or 'RACC' — a regulatory label serving rather than a
+    cooking unit, and the only portion many Foundation foods carry. Neither is
+    a unit anyone measures with.
+
+    Note that portion coverage is better on SR Legacy entries than on the
+    newer Foundation ones, which is the opposite of their nutrient quality.
+    """
+    portions: dict[str, float] = {}
+    for portion in payload.get("foodPortions") or []:
+        measure = ((portion.get("measureUnit") or {}).get("name") or "").strip()
+        if measure in PLACEHOLDER_MEASURE_UNITS:
+            measure = ""
+        modifier = (portion.get("modifier") or "").strip()
+
+        # The modifier qualifies the measure unit rather than replacing it.
+        # Dropping either one loses information: 'Onion' + 'Edible' without the
+        # measure becomes the unusable unit 'Edible', while 'cup' + 'chopped'
+        # and 'cup' + 'sliced' without the modifier collide on 'cup' at two
+        # different weights. Joining them also reproduces SR Legacy's own
+        # spelling, where the same portion arrives as one 'cup, chopped'
+        # string with no measure unit at all.
+        unit = ", ".join(part for part in (measure, modifier) if part)
+        if not unit:
+            continue
+
+        amount = portion.get("amount")
+        gram_weight = portion.get("gramWeight")
+        if not amount or amount <= 0 or not gram_weight or gram_weight <= 0:
+            continue
+
+        # food_units is UNIQUE (food_id, unit); a repeated modifier must not
+        # abort the import. First wins.
+        portions.setdefault(unit, gram_weight / amount)
+    return portions
+
+
 def import_food(
     conn: sqlite3.Connection,
     fdc_id: int,
@@ -131,11 +182,16 @@ def import_food(
 ) -> int:
     """Fetch a food from FDC and insert it as an item.
 
+    Unit conversions come from the payload's own `foodPortions`. Anything in
+    `units` overrides them, since a caller who passes a weight has checked it
+    and USDA's figure is an average.
+
     Fetch and parse both happen before any write, so a failure leaves no
     partial row behind.
     """
     payload = get_food(fdc_id)
     macros = parse_macros(payload)
+    resolved_units = {**parse_portions(payload), **(units or {})}
     return create_item(
         conn,
         name=payload["description"],
@@ -144,5 +200,5 @@ def import_food(
         source="usda",
         source_ref=str(fdc_id),
         verified=False,
-        units=units,
+        units=resolved_units,
     )

@@ -407,6 +407,18 @@ Cronometer's **cooked-recipe-weight** concept remains worth adopting regardless:
 macros divided by cooked yield weight is exactly the `cooked_yield_g` mechanism above, and it
 is what makes souper-cube portions accurate rather than estimated.
 
+> **Amended 2026-09-06 — `cooked_yield_g` is not a weighing step for count-portioned
+> recipes.** For a recipe eaten as *n* portions, the yield value cancels out of the
+> arithmetic entirely: storing per-100 g as `M × 100 / Y` and a `serving` unit of `Y / n`
+> yields `M / n` per serving for *any* self-consistent `Y`. So `Y` can be the summed raw
+> component grams, which is computed rather than measured, and the only thing that must be
+> captured in the kitchen is the portion **count** — countable, not weighable. A real cooked
+> weight is required in exactly two cases: portioning by weight rather than by count, and
+> nesting the recipe into a parent by weight. In the raw-derived case the recipe's
+> `kcal_100g` is nominal — correct per serving, wrong per gram — and must be marked as such.
+> This makes `create_recipe(servings=n)` the primary path and `cooked_yield_g` the exception.
+> Full derivation in [`docs/recipe-import.md`](../../recipe-import.md).
+
 Every food carries `source`, `source_ref`, and `verified`, so provenance is auditable and
 guessed values are distinguishable from label-confirmed ones.
 
@@ -428,6 +440,10 @@ regardless of source — match each line to a food in the library, resolve units
 `create_recipe`. That matching is judgment work and happens in session, against the library's
 callable surface. **No scraper, no parser, no importer is built for this.** Revisit only if
 it becomes repetitive enough to be worth automating.
+
+The step-by-step shape of that session activity — including the cookbook-photo path and the
+gram-weight problem it creates — is written up as a runbook in
+[`docs/recipe-import.md`](../../recipe-import.md).
 
 This does not contradict the rejection of a scraped recipe library. That rejection stands:
 planning is not driven by a corpus of web recipes, and web-sourced *macros* are never used.
@@ -559,6 +575,7 @@ automation becomes obvious rather than speculative.
 | Body composition figures | Confirmed transposed; LBM 148.5 lb, fat mass 49.5 lb |
 | Cronometer as data layer | Rejected. May remain a logging surface. |
 | Store | SQLite, portable SQL, Postgres door left open |
+| Paprika Recipe Manager | Rejected as an integration; adopted as an unwired surface. See §12. |
 
 ### Remaining, none blocking
 
@@ -573,3 +590,99 @@ automation becomes obvious rather than speculative.
 4. **How many Cronometer recipes are worth exporting?** The format question is resolved
    (see §6) — what remains is volume, which decides whether the CSV path is worth running in
    bulk or whether a handful of hand-composed recipes covers it.
+
+---
+
+## 12. Evaluated and rejected: Paprika Recipe Manager
+
+**Status:** Rejected as an integration. Adopted as an unwired companion app.
+**Evaluated:** 2026-09-06
+
+The question was whether wiring Paprika into this system would make sharing recipes,
+exporting lists, and shopping easier. It would not, and the reason is structural.
+
+### What Paprika actually stores
+
+- **Ingredients are one newline-separated free-text blob.** There is no per-ingredient
+  quantity, unit, or food reference. `"2 tbsp olive oil\n1 lb ground beef"` is a *string*.
+  Grocery aggregation and recipe scaling are heuristic text parsing over that string.
+- **Paprika computes no nutrition.** `nutritional_info` is a free-text field the user types.
+  There is no food database behind it.
+- Fields are `name`, `ingredients`, `directions`, `description`, `notes`, `nutritional_info`,
+  `servings`, `source`, `source_url`, `categories`, `photo`, `scale`, `uid`, `hash`.
+- Export is `.paprikarecipes`: a zip of gzipped JSON documents, one per recipe.
+
+**So Paprika contributes zero grams and zero macros.** It is a presentation and list layer.
+This system's entire value is the opposite — one canonical per-100 g number per food and
+per-food gram weights in `food_units`, where `packet` means 22 g for one food and 16 g for
+another. Anything round-tripped through Paprika returns as text that must be re-resolved.
+
+### The real gap Paprika appears to fill
+
+This is a genuine weakness and worth stating plainly. There is no mobile surface and no
+shopping surface, and none is planned: §7 makes Excel output-only, and `gap_list()` returns
+`list[GapItem]`. Standing in Costco holding a Python dataclass is not a plan. Paprika's
+grocery list — aisle grouping, checkboxes, offline, cross-device — is good at that job.
+Its web clipper is a maintained scraper, which §6 explicitly declines to build. It shares
+recipes natively. It has cook-mode UX that is permanently out of scope here.
+
+### Why integration still fails
+
+- **Every one of those benefits is available with zero integration.** The clipper, the
+  grocery list, sharing, and cook mode all work with Paprika sitting entirely beside this
+  system. Integration buys only the removal of manual copy-paste.
+- **Price that honestly.** Shopping is weekly; a 3–4 plan rotation's gap list is 20–30 lines.
+  Pasting it into Paprika's bulk-add box is about twenty seconds a week. An integration to
+  save that is roughly 300 lines, stored credentials, a link table, a migration, and
+  permanent breakage risk.
+- **Inbound is worse.** Automated Paprika → yolk import yields free-text ingredient lines
+  that still need matching to food ids and unit resolution. It automates the copy, not the
+  judgment. §6 put that judgment in-session deliberately.
+- **It reintroduces the seam §4 exists to eliminate** — two recipe stores, two uid spaces,
+  two names, two scaling models, and no answer to which is true on divergence. That seam is
+  what produces the `#N/A` rows in the current workbooks.
+- **It would be a third inventory.** Paprika 3's pantry is name-matched and would compete
+  with the `inventory` table's two-tier `qty_g`/`portions` + `have`/`low`/`out` model.
+- **No official API — the exact ground Cronometer was rejected on (§1).** Paprika's is
+  reverse-engineered: `/api/v2/sync/recipe/{uid}/`, email and password exchanged for a JWT,
+  full-object writes only. It is materially better behaved than Cronometer's GWT-RPC
+  hash-chasing and community projects have used it for years, but it is unofficial,
+  unsupported, terms-of-service grey, and requires storing an account **password** rather
+  than a scoped key like `USDA_API_KEY`. The standard set for Cronometer applies unchanged:
+  *may remain a surface, is not a store.*
+- **The meal planner cannot represent the framework.** Paprika has roughly four meal types
+  and no concept of six slots, training versus rest profiles, fasting windows, slot roles,
+  `fixed` slots, or flex bounds. Any plan exported to it is lossy by construction.
+- **Scaling semantics are incompatible.** Paprika's `scale` multiplies the whole recipe text;
+  this system has per-component bounded flex with kitchen-increment snapping.
+
+### What integration would have cost
+
+| Change | Note |
+|---|---|
+| `foods.source` CHECK gains `'paprika'` | SQLite cannot ALTER a CHECK — full table rebuild plus `user_version` bump |
+| A migration framework | `db/migrations/` is referenced in §3 but does not exist yet; this would be its forcing function |
+| `paprika_links` table | `food_id`, `paprika_uid`, `paprika_hash`, `last_synced_at` — id mapping and drift detection |
+| `sources/paprika.py`, `export/paprika.py` | Mirroring the `usda.py` shape, reusing `sources/cache.py` |
+| An ingredient-line parser | Quantity, unit, and name off free text — the expensive, error-prone piece §6 declines to build |
+| Credentials in `.env` | `PAPRIKA_EMAIL` / `PAPRIKA_PASSWORD`, an account password |
+| A conflict policy | Writes require all fields, so every update is read-modify-write |
+| A real `.paprikarecipes` fixture in `examples/` | Per the §9 real-artifacts rule |
+
+### Decision
+
+- **Use Paprika. Do not integrate it.** Keep it as a disconnected scrapbook and kitchen
+  surface: clipper, sharing, photos, timers, phone-in-the-store list.
+- **When a clipped recipe should become real,** paste its ingredient text into a session and
+  compose it against the food library — exactly the path §6 already prescribes. Paprika
+  becomes a better clipboard than a screenshot, nothing more.
+- **Revisit exactly once,** after `gap_list()` ships and two or three real weeks have run
+  through the system. If moving the list to the phone by hand is the friction actually
+  biting, build **one-way, outbound, list-only**: yolk → Paprika groceries. Nothing inbound,
+  no recipe sync, no meal-plan sync.
+- **If sync is ever built,** the one cleanly net-positive write is pushing yolk's *computed*
+  macros into Paprika's free-text `nutritional_info`. Truth flows outward from the engine and
+  nothing is parsed back. It does not justify building sync on its own.
+- **Rejected permanently:** bidirectional recipe sync, Paprika's meal planner as the planning
+  surface, and Paprika's pantry as inventory. Each trades the precision model for text and
+  recreates the failure class this system exists to fix.
