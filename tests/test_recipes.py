@@ -3,7 +3,7 @@ import pytest
 from yolk.errors import MissingYieldError, RecipeCycleError
 from yolk.foods import (
     create_item, create_recipe, derived_tags, macros_per_100g,
-    portion_macros, recompute_recipe,
+    portion_macros, recompute_recipe, set_cooked_yield,
 )
 from yolk.macros import Macros
 
@@ -251,3 +251,219 @@ def test_portion_macros_raises_on_uncomputed_recipe(db, pantry):
     )
     with pytest.raises(MissingYieldError):
         portion_macros(db, recipe_id, 10, "g")
+
+
+# --- servings-derived yield ------------------------------------------------
+
+
+def test_servings_derives_yield_from_summed_component_grams(db, pantry):
+    """No scale involved: the yield is the raw input weight, which the
+    library already knows from the components."""
+    recipe_id = create_recipe(
+        db, name="Counted Sauce", role="sauce", servings=4,
+        components=[
+            {"food_id": pantry["oil"], "qty": 100, "unit": "g"},
+            {"food_id": pantry["garlic"], "qty": 100, "unit": "g"},
+        ],
+    )
+    row = db.execute(
+        "SELECT cooked_yield_g FROM foods WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    assert row["cooked_yield_g"] == pytest.approx(200.0)
+
+
+def test_servings_adds_a_serving_unit(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Counted Sauce", role="sauce", servings=4,
+        components=[
+            {"food_id": pantry["oil"], "qty": 100, "unit": "g"},
+            {"food_id": pantry["garlic"], "qty": 100, "unit": "g"},
+        ],
+    )
+    row = db.execute(
+        "SELECT grams FROM food_units WHERE food_id = ? AND unit = 'serving'",
+        (recipe_id,),
+    ).fetchone()
+    assert row is not None, "no serving unit was created"
+    assert row["grams"] == pytest.approx(50.0)
+
+
+def test_one_serving_is_total_macros_divided_by_servings(db, pantry):
+    """100 g oil (884 kcal) + 100 g garlic (149 kcal) = 1033 kcal total.
+    Four servings must be 258.25 kcal each."""
+    recipe_id = create_recipe(
+        db, name="Counted Sauce", role="sauce", servings=4,
+        components=[
+            {"food_id": pantry["oil"], "qty": 100, "unit": "g"},
+            {"food_id": pantry["garlic"], "qty": 100, "unit": "g"},
+        ],
+    )
+    m = portion_macros(db, recipe_id, 1, "serving")
+    assert m.kcal == pytest.approx(1033.0 / 4, abs=0.01)
+
+
+def test_serving_macros_do_not_depend_on_the_yield_weight(db, pantry):
+    """The load-bearing claim: for a count-portioned recipe the yield weight
+    cancels. A raw-derived yield of 200 g and a measured cooked yield of
+    140 g must give identical macros per serving, which is why weighing the
+    finished dish is unnecessary when portioning by count."""
+    components = [
+        {"food_id": pantry["oil"], "qty": 100, "unit": "g"},
+        {"food_id": pantry["garlic"], "qty": 100, "unit": "g"},
+    ]
+    raw_derived = create_recipe(
+        db, name="Raw Derived", role="sauce", servings=4, components=components
+    )
+    measured = create_recipe(
+        db, name="Measured", role="sauce", cooked_yield_g=140.0,
+        components=components, units={"serving": 35.0},
+    )
+    assert portion_macros(db, raw_derived, 1, "serving").kcal == pytest.approx(
+        portion_macros(db, measured, 1, "serving").kcal, abs=1e-9
+    )
+
+
+def test_servings_marks_the_yield_as_raw_derived(db, pantry):
+    """per-100 g is nominal on these recipes — correct per serving, wrong per
+    gram — so it must be distinguishable from a measured yield."""
+    recipe_id = create_recipe(
+        db, name="Counted Sauce", role="sauce", servings=4,
+        components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+    )
+    row = db.execute(
+        "SELECT yield_basis FROM foods WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    assert row["yield_basis"] == "raw_derived"
+
+
+def test_measured_yield_is_marked_measured(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Weighed Sauce", role="sauce", cooked_yield_g=140.0,
+        components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+    )
+    row = db.execute(
+        "SELECT yield_basis FROM foods WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    assert row["yield_basis"] == "measured"
+
+
+def test_servings_and_cooked_yield_together_are_rejected(db, pantry):
+    """Two sources for one number. Picking one silently would make the
+    resulting macros depend on an undocumented precedence rule."""
+    with pytest.raises(ValueError) as exc:
+        create_recipe(
+            db, name="Ambiguous", role="sauce", servings=4, cooked_yield_g=140.0,
+            components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+        )
+    assert "servings" in str(exc.value).lower()
+
+
+def test_zero_servings_rejected(db, pantry):
+    with pytest.raises(ValueError):
+        create_recipe(
+            db, name="Zero", role="sauce", servings=0,
+            components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+        )
+
+
+def test_rejected_servings_leaves_no_orphan_recipe(db, pantry):
+    with pytest.raises(ValueError):
+        create_recipe(
+            db, name="Zero", role="sauce", servings=0,
+            components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+        )
+    row = db.execute(
+        "SELECT COUNT(*) AS n FROM foods WHERE name = 'Zero'"
+    ).fetchone()
+    assert row["n"] == 0
+
+
+def test_servings_yield_uses_display_units_for_components(db, pantry):
+    """Components given in tbsp/clove must be converted to grams before
+    summing, not summed as raw quantities."""
+    recipe_id = create_recipe(
+        db, name="Unit Sauce", role="sauce", servings=2,
+        components=[
+            {"food_id": pantry["oil"], "qty": 2, "unit": "tbsp"},    # 27.0 g
+            {"food_id": pantry["garlic"], "qty": 3, "unit": "clove"},  # 9.0 g
+        ],
+    )
+    row = db.execute(
+        "SELECT cooked_yield_g FROM foods WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    assert row["cooked_yield_g"] == pytest.approx(36.0)
+
+
+def test_servings_with_an_explicit_serving_unit_is_rejected(db, pantry):
+    """servings=n and units={'serving': x} are two sources for one number,
+    exactly like servings + cooked_yield_g. Accepting both silently produced
+    a recipe whose four servings did not add up to the batch."""
+    with pytest.raises(ValueError) as exc:
+        create_recipe(
+            db, name="Contradiction", role="sauce", servings=4,
+            components=[{"food_id": pantry["oil"], "qty": 200, "unit": "g"}],
+            units={"serving": 35.0},
+        )
+    assert "serving" in str(exc.value).lower()
+
+
+def test_servings_still_accepts_other_explicit_units(db, pantry):
+    """Only the 'serving' key conflicts. A souper_cube weight is unrelated."""
+    recipe_id = create_recipe(
+        db, name="Cubed", role="sauce", servings=4,
+        components=[{"food_id": pantry["oil"], "qty": 200, "unit": "g"}],
+        units={"souper_cube": 120.0},
+    )
+    rows = dict(
+        db.execute(
+            "SELECT unit, grams FROM food_units WHERE food_id = ?", (recipe_id,)
+        ).fetchall()
+    )
+    assert rows["serving"] == pytest.approx(50.0)
+    assert rows["souper_cube"] == pytest.approx(120.0)
+
+
+# --- recording a yield after the fact --------------------------------------
+
+
+def test_set_cooked_yield_computes_macros_on_a_deferred_recipe(db, pantry):
+    """The create-now, cook-later flow: a recipe made without a yield must
+    have a supported way to receive one, not a hand-written UPDATE."""
+    recipe_id = create_recipe(
+        db, name="Deferred", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+    )
+    with pytest.raises(MissingYieldError):
+        macros_per_100g(db, recipe_id)
+
+    set_cooked_yield(db, recipe_id, 50.0)
+
+    assert macros_per_100g(db, recipe_id).kcal == pytest.approx(1768.0, abs=0.01)
+
+
+def test_set_cooked_yield_marks_the_basis_measured(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Deferred", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+    )
+    set_cooked_yield(db, recipe_id, 50.0)
+    row = db.execute(
+        "SELECT yield_basis FROM foods WHERE id = ?", (recipe_id,)
+    ).fetchone()
+    assert row["yield_basis"] == "measured"
+
+
+def test_set_cooked_yield_rejects_non_positive(db, pantry):
+    recipe_id = create_recipe(
+        db, name="Deferred", role="sauce",
+        components=[{"food_id": pantry["oil"], "qty": 100, "unit": "g"}],
+    )
+    with pytest.raises(ValueError):
+        set_cooked_yield(db, recipe_id, 0.0)
+
+
+def test_set_cooked_yield_rejects_items(db, pantry):
+    """An item's macros come from its source, not from a yield division."""
+    with pytest.raises(ValueError) as exc:
+        set_cooked_yield(db, pantry["oil"], 50.0)
+    assert "recipe" in str(exc.value).lower()

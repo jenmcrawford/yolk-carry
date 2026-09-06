@@ -1,5 +1,5 @@
 PRAGMA foreign_keys = ON;
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 
 CREATE TABLE people (
     id      INTEGER PRIMARY KEY,
@@ -27,6 +27,11 @@ CREATE TABLE foods (
     carb_g_100g     REAL,
     fiber_g_100g    REAL,
     cooked_yield_g  REAL CHECK (cooked_yield_g IS NULL OR cooked_yield_g > 0),
+    -- how cooked_yield_g was arrived at. 'raw_derived' means it is the summed
+    -- raw component weight, not a measurement: such a recipe's per-100 g figures
+    -- are nominal, correct per serving and wrong per gram.
+    yield_basis     TEXT CHECK (yield_basis IS NULL
+                                OR yield_basis IN ('measured', 'raw_derived')),
     instructions    TEXT,
     source          TEXT NOT NULL
                     CHECK (source IN ('usda', 'off', 'label', 'manual',

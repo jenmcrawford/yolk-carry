@@ -95,8 +95,8 @@ def macros_per_100g(conn: sqlite3.Connection, food_id: int) -> Macros:
     if row["kind"] == "recipe" and row["kcal_100g"] is None:
         raise MissingYieldError(
             f"Recipe {row['name']!r} (id {food_id}) has no computed macros. "
-            f"Set cooked_yield_g and call recompute_recipe before reading its "
-            f"macros."
+            f"Weigh the finished dish and call set_cooked_yield, or rebuild it "
+            f"with create_recipe(servings=...) if it is portioned by count."
         )
     return Macros(
         kcal=row["kcal_100g"] or 0.0,
@@ -122,6 +122,7 @@ def create_recipe(
     role: str,
     components: list[dict],
     cooked_yield_g: float | None = None,
+    servings: int | None = None,
     instructions: str | None = None,
     units: dict[str, float] | None = None,
     notes: str | None = None,
@@ -131,17 +132,64 @@ def create_recipe(
     Each component dict needs food_id, qty, and unit. Optional keys: flex
     (bool), flex_min_g, flex_max_g, note.
 
+    Yield comes from one of two places. Pass `cooked_yield_g` when the
+    finished dish was weighed. Pass `servings` when it will be portioned by
+    count instead, and the yield is derived from the summed raw component
+    weight — no scale required, because the yield value cancels: storing
+    per-100 g as `M * 100 / Y` alongside a serving unit of `Y / n` gives
+    `M / n` per serving for any self-consistent Y. The resulting per-100 g
+    figures are therefore nominal, which `yield_basis='raw_derived'` records.
+    Weigh the dish instead whenever it will be portioned by weight, or nested
+    into a parent recipe by weight, since water loss concentrates macros per
+    gram and a raw-derived yield understates them.
+
     Recipe, components, and units are one transaction. A rejected component
     must not leave an empty recipe behind — and if a yield was given, the
     initial macro computation happens inside that same transaction, so a
     nested recipe that turns out to have no cooked_yield_g of its own rolls
     everything back rather than leaving a partially-written parent.
     """
+    serving_g: float | None = None
+    yield_basis: str | None = None
+
+    if servings is not None:
+        if cooked_yield_g is not None:
+            raise ValueError(
+                "Pass servings or cooked_yield_g, not both. They are two "
+                "sources for one number, and choosing between them silently "
+                "would make the recipe's macros depend on a hidden rule."
+            )
+        if servings <= 0:
+            raise ValueError(f"servings must be positive, got {servings!r}.")
+        if units and "serving" in units:
+            raise ValueError(
+                "Pass servings or an explicit 'serving' unit, not both. "
+                "Accepting both lets a recipe declare n servings whose weights "
+                "do not add up to the batch, with no error to say so."
+            )
+        # Resolved before any write, so an unknown unit leaves nothing behind.
+        cooked_yield_g = sum(
+            to_grams(conn, c["food_id"], c["qty"], c["unit"]) for c in components
+        )
+        if cooked_yield_g <= 0:
+            raise ValueError(
+                f"Recipe {name!r} has no component weight, so a yield cannot be "
+                f"derived from it."
+            )
+        serving_g = cooked_yield_g / servings
+        yield_basis = "raw_derived"
+    elif cooked_yield_g is not None:
+        yield_basis = "measured"
+
+    if serving_g is not None:
+        units = {**(units or {}), "serving": serving_g}
+
     try:
         cur = conn.execute(
-            "INSERT INTO foods (kind, name, role, cooked_yield_g, instructions, "
-            "source, notes) VALUES ('recipe', ?, ?, ?, ?, 'computed', ?)",
-            (name, role, cooked_yield_g, instructions, notes),
+            "INSERT INTO foods (kind, name, role, cooked_yield_g, yield_basis, "
+            "instructions, source, notes) "
+            "VALUES ('recipe', ?, ?, ?, ?, ?, 'computed', ?)",
+            (name, role, cooked_yield_g, yield_basis, instructions, notes),
         )
         food_id = cur.lastrowid
         for c in components:
@@ -210,8 +258,8 @@ def _macros_resolved(
     if row["cooked_yield_g"] is None:
         raise MissingYieldError(
             f"Recipe {row['name']!r} (id {food_id}) has no cooked_yield_g, so its "
-            f"per-100 g macros cannot be computed. Weigh the finished dish and "
-            f"set cooked_yield_g."
+            f"per-100 g macros cannot be computed. Weigh the finished dish and call "
+            f"set_cooked_yield, or use create_recipe(servings=...) instead."
         )
 
     chain = seen | {food_id}
@@ -235,6 +283,48 @@ def _write_computed_macros(conn: sqlite3.Connection, food_id: int, macros: Macro
             macros.fiber_g, datetime.now(timezone.utc).isoformat(), food_id,
         ),
     )
+
+
+def set_cooked_yield(
+    conn: sqlite3.Connection, food_id: int, cooked_yield_g: float
+) -> Macros:
+    """Record a weighed yield on an existing recipe and compute its macros.
+
+    This is the second half of the create-now, cook-later flow: a recipe can
+    be composed before the dish exists, and receives its yield once the
+    finished dish has been weighed. The basis is always 'measured' — a
+    derived yield comes from create_recipe(servings=...) instead — so a
+    recipe whose per-100 g figures are real stays distinguishable from one
+    whose figures are nominal.
+    """
+    if cooked_yield_g <= 0:
+        raise ValueError(
+            f"cooked_yield_g must be positive, got {cooked_yield_g!r}."
+        )
+    row = conn.execute(
+        "SELECT kind, name FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+    if row["kind"] != "recipe":
+        raise ValueError(
+            f"{row['name']!r} (id {food_id}) is an item, not a recipe. An "
+            f"item's macros come from its source, not from a yield division."
+        )
+
+    try:
+        conn.execute(
+            "UPDATE foods SET cooked_yield_g = ?, yield_basis = 'measured' "
+            "WHERE id = ?",
+            (cooked_yield_g, food_id),
+        )
+        macros = _macros_resolved(conn, food_id, frozenset())
+        _write_computed_macros(conn, food_id, macros)
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return macros
 
 
 def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
