@@ -219,3 +219,9 @@ __marimo__/
 
 # Cached API responses
 .cache/
+
+# yolk's local database. The committed export in data/ is the durable copy.
+yolk.db
+yolk.db-journal
+yolk.db-wal
+yolk.db-shm
