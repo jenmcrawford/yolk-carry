@@ -5,10 +5,11 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+from yolk.db import Connection
+from yolk.db.migrate import apply_migrations
 
 
-def connect(path: str | Path) -> sqlite3.Connection:
+def connect(path: str | Path) -> Connection:
     """Open a connection with row access by name and foreign keys enforced."""
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -16,9 +17,8 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
-def create_schema(conn: sqlite3.Connection) -> None:
-    """Apply schema.sql to an empty database."""
-    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-    # executescript issues an implicit COMMIT that resets the pragma
+def create_schema(conn: Connection) -> None:
+    """Bring a database up to the latest schema by applying every migration."""
+    apply_migrations(conn)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.commit()

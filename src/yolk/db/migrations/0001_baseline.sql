@@ -1,6 +1,3 @@
-PRAGMA foreign_keys = ON;
-PRAGMA user_version = 2;
-
 CREATE TABLE people (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL UNIQUE
