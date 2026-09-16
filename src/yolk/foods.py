@@ -8,7 +8,7 @@ as a component of a recipe or an entry in a plan.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from yolk.db import Connection
 from yolk.errors import MissingYieldError, RecipeCycleError
@@ -26,6 +26,7 @@ def create_item(
     source: str = "manual",
     source_ref: str | None = None,
     verified: bool = False,
+    verified_on: str | None = None,
     units: dict[str, float] | None = None,
     notes: str | None = None,
 ) -> int:
@@ -34,16 +35,19 @@ def create_item(
     The food row and its unit conversions are written in one transaction: a
     bad unit must not leave a food behind with no way to measure it.
     """
+    if verified and verified_on is None:
+        verified_on = date.today().isoformat()
     try:
         row = conn.execute(
             "INSERT INTO foods (kind, name, brand, role, kcal_100g, protein_g_100g, "
             "fat_g_100g, carb_g_100g, fiber_g_100g, source, source_ref, verified, "
-            "notes) VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "verified_on, notes) "
+            "VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (
                 name, brand, role,
                 macros.kcal, macros.protein_g, macros.fat_g,
                 macros.carb_g, macros.fiber_g,
-                source, source_ref, int(verified), notes,
+                source, source_ref, int(verified), verified_on, notes,
             ),
         ).fetchone()
         food_id = row["id"]
