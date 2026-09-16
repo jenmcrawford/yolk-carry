@@ -111,6 +111,9 @@ def test_rebuild_keeps_every_row_in_the_rebuilt_table(tmp_path):
 
     assert conn.execute("SELECT label FROM parent WHERE id = 1").fetchone()["label"] == "a"
     conn.execute("INSERT INTO parent (id, label) VALUES (2, 'c')")
+    assert conn.execute(
+        "SELECT count(*) AS n FROM parent WHERE id = 2"
+    ).fetchone()["n"] == 1
     conn.close()
 
 
