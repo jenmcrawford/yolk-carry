@@ -14,6 +14,8 @@ def db():
 @pytest.fixture
 def person(db):
     """Person 1, used by every person-scoped test."""
-    cur = db.execute("INSERT INTO people (name) VALUES ('Jen')")
+    row = db.execute(
+        "INSERT INTO people (name) VALUES ('Jen') RETURNING id"
+    ).fetchone()
     db.commit()
-    return cur.lastrowid
+    return row["id"]

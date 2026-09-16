@@ -8,11 +8,11 @@ handled here.
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import httpx
 from dotenv import load_dotenv
 
+from yolk.db import Connection
 from yolk.errors import SourceRequestError
 from yolk.foods import create_item
 from yolk.macros import Macros
@@ -174,7 +174,7 @@ def parse_portions(payload: dict) -> dict[str, float]:
 
 
 def import_food(
-    conn: sqlite3.Connection,
+    conn: Connection,
     fdc_id: int,
     *,
     role: str,

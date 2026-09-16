@@ -7,10 +7,10 @@ evaluate() side-effect free is what makes the rest testable.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from yolk.db import Connection
 from yolk.foods import portion_macros
 from yolk.macros import KCAL_PER_G_CARB, KCAL_PER_G_FAT, Macros
 from yolk.people import targets_for_profile
@@ -18,7 +18,7 @@ from yolk.units import to_grams
 
 
 def create_day_plan(
-    conn: sqlite3.Connection,
+    conn: Connection,
     person_id: int,
     profile_id: int,
     *,
@@ -26,20 +26,20 @@ def create_day_plan(
     notes: str | None = None,
     parent_plan_id: int | None = None,
 ) -> int:
-    cur = conn.execute(
+    row = conn.execute(
         "INSERT INTO day_plans (person_id, profile_id, name, parent_plan_id, "
-        "created_at, notes) VALUES (?, ?, ?, ?, ?, ?)",
+        "created_at, notes) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         (
             person_id, profile_id, name, parent_plan_id,
             datetime.now(timezone.utc).isoformat(), notes,
         ),
-    )
+    ).fetchone()
     conn.commit()
-    return cur.lastrowid
+    return row["id"]
 
 
 def add_entry(
-    conn: sqlite3.Connection,
+    conn: Connection,
     day_plan_id: int,
     *,
     slot_no: int,
@@ -50,14 +50,14 @@ def add_entry(
     flex_min_g: float | None = None,
     flex_max_g: float | None = None,
 ) -> int:
-    cur = conn.execute(
+    row = conn.execute(
         "INSERT INTO day_plan_entries (day_plan_id, slot_no, food_id, qty, unit, "
-        "flex, flex_min_g, flex_max_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "flex, flex_min_g, flex_max_g) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (day_plan_id, slot_no, food_id, qty, unit,
          int(flex), flex_min_g, flex_max_g),
-    )
+    ).fetchone()
     conn.commit()
-    return cur.lastrowid
+    return row["id"]
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ def _pct_of_kcal(grams: float, kcal_per_g: float, total_kcal: float) -> float:
     return grams * kcal_per_g / total_kcal * 100.0
 
 
-def evaluate(conn: sqlite3.Connection, day_plan_id: int) -> DayEvaluation:
+def evaluate(conn: Connection, day_plan_id: int) -> DayEvaluation:
     """Aggregate a day plan and compare it against its profile's targets."""
     plan = conn.execute(
         "SELECT name, profile_id FROM day_plans WHERE id = ?", (day_plan_id,)

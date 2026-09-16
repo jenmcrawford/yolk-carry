@@ -10,13 +10,14 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 
+from yolk.db import Connection
 from yolk.errors import MissingYieldError, RecipeCycleError
 from yolk.macros import Macros
 from yolk.units import to_grams
 
 
 def create_item(
-    conn: sqlite3.Connection,
+    conn: Connection,
     *,
     name: str,
     role: str,
@@ -34,18 +35,18 @@ def create_item(
     bad unit must not leave a food behind with no way to measure it.
     """
     try:
-        cur = conn.execute(
+        row = conn.execute(
             "INSERT INTO foods (kind, name, brand, role, kcal_100g, protein_g_100g, "
             "fat_g_100g, carb_g_100g, fiber_g_100g, source, source_ref, verified, "
-            "notes) VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "notes) VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (
                 name, brand, role,
                 macros.kcal, macros.protein_g, macros.fat_g,
                 macros.carb_g, macros.fiber_g,
                 source, source_ref, int(verified), notes,
             ),
-        )
-        food_id = cur.lastrowid
+        ).fetchone()
+        food_id = row["id"]
         for unit, grams in (units or {}).items():
             conn.execute(
                 "INSERT INTO food_units (food_id, unit, grams) VALUES (?, ?, ?)",
@@ -59,7 +60,7 @@ def create_item(
 
 
 def add_unit(
-    conn: sqlite3.Connection,
+    conn: Connection,
     food_id: int,
     unit: str,
     grams: float,
@@ -78,7 +79,7 @@ def add_unit(
     conn.commit()
 
 
-def macros_per_100g(conn: sqlite3.Connection, food_id: int) -> Macros:
+def macros_per_100g(conn: Connection, food_id: int) -> Macros:
     """Return the stored per-100 g macros for a food.
 
     Items always have macros (the schema guarantees it). A recipe that has
@@ -108,7 +109,7 @@ def macros_per_100g(conn: sqlite3.Connection, food_id: int) -> Macros:
 
 
 def portion_macros(
-    conn: sqlite3.Connection, food_id: int, qty: float, unit: str
+    conn: Connection, food_id: int, qty: float, unit: str
 ) -> Macros:
     """Macros for a given quantity of a food, in any unit it knows."""
     grams = to_grams(conn, food_id, qty, unit)
@@ -116,7 +117,7 @@ def portion_macros(
 
 
 def create_recipe(
-    conn: sqlite3.Connection,
+    conn: Connection,
     *,
     name: str,
     role: str,
@@ -185,13 +186,13 @@ def create_recipe(
         units = {**(units or {}), "serving": serving_g}
 
     try:
-        cur = conn.execute(
+        row = conn.execute(
             "INSERT INTO foods (kind, name, role, cooked_yield_g, yield_basis, "
             "instructions, source, notes) "
-            "VALUES ('recipe', ?, ?, ?, ?, ?, 'computed', ?)",
+            "VALUES ('recipe', ?, ?, ?, ?, ?, 'computed', ?) RETURNING id",
             (name, role, cooked_yield_g, yield_basis, instructions, notes),
-        )
-        food_id = cur.lastrowid
+        ).fetchone()
+        food_id = row["id"]
         for c in components:
             conn.execute(
                 "INSERT INTO food_components (parent_food_id, child_food_id, qty, "
@@ -218,7 +219,7 @@ def create_recipe(
     return food_id
 
 
-def _components(conn: sqlite3.Connection, food_id: int) -> list[sqlite3.Row]:
+def _components(conn: Connection, food_id: int) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT child_food_id, qty, unit FROM food_components "
         "WHERE parent_food_id = ? ORDER BY id",
@@ -227,7 +228,7 @@ def _components(conn: sqlite3.Connection, food_id: int) -> list[sqlite3.Row]:
 
 
 def _macros_resolved(
-    conn: sqlite3.Connection, food_id: int, seen: frozenset[int]
+    conn: Connection, food_id: int, seen: frozenset[int]
 ) -> Macros:
     """Per-100 g macros, always recursing into nested recipes rather than
     trusting their cached value, so a stale cache cannot propagate.
@@ -272,7 +273,7 @@ def _macros_resolved(
     return total.scale(100.0 / row["cooked_yield_g"])
 
 
-def _write_computed_macros(conn: sqlite3.Connection, food_id: int, macros: Macros) -> None:
+def _write_computed_macros(conn: Connection, food_id: int, macros: Macros) -> None:
     """Write computed per-100 g macros to a food row. Does not commit — the
     caller decides the transaction boundary."""
     conn.execute(
@@ -286,7 +287,7 @@ def _write_computed_macros(conn: sqlite3.Connection, food_id: int, macros: Macro
 
 
 def set_cooked_yield(
-    conn: sqlite3.Connection, food_id: int, cooked_yield_g: float
+    conn: Connection, food_id: int, cooked_yield_g: float
 ) -> Macros:
     """Record a weighed yield on an existing recipe and compute its macros.
 
@@ -327,7 +328,7 @@ def set_cooked_yield(
     return macros
 
 
-def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
+def recompute_recipe(conn: Connection, food_id: int) -> Macros:
     """Recompute and cache a recipe's per-100 g macros."""
     macros = _macros_resolved(conn, food_id, frozenset())
     _write_computed_macros(conn, food_id, macros)
@@ -335,7 +336,7 @@ def recompute_recipe(conn: sqlite3.Connection, food_id: int) -> Macros:
     return macros
 
 
-def derived_tags(conn: sqlite3.Connection, food_id: int) -> set[str]:
+def derived_tags(conn: Connection, food_id: int) -> set[str]:
     """Tags on this food, unioned with those of every nested component.
 
     Only purchased items are tagged by hand. A recipe's tags are derived, so
@@ -345,7 +346,7 @@ def derived_tags(conn: sqlite3.Connection, food_id: int) -> set[str]:
 
 
 def _derived_tags(
-    conn: sqlite3.Connection, food_id: int, seen: frozenset[int]
+    conn: Connection, food_id: int, seen: frozenset[int]
 ) -> set[str]:
     if food_id in seen:
         raise RecipeCycleError(f"Cycle detected while deriving tags for id {food_id}")
