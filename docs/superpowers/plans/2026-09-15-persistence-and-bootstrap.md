@@ -739,6 +739,8 @@ The plan-building loop currently lives in the golden test. It moves to `src/yolk
 Create `tests/test_seed.py`:
 
 ```python
+import sqlite3
+
 import pytest
 
 from yolk.planning.evaluate import evaluate
@@ -793,8 +795,9 @@ def test_seed_reproduces_the_reported_calories(db):
 
 
 def test_seeding_twice_raises_rather_than_duplicating(db):
+    """The second Jen violates people.name's UNIQUE constraint."""
     seed_keto_plan_a(db)
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.IntegrityError):
         seed_keto_plan_a(db)
 ```
 
