@@ -56,13 +56,13 @@ def test_tolerances_default_to_spec_values(db):
     Insert the row via raw SQL, omitting the tolerance columns, so the
     values under test are the ones the schema itself supplies."""
     pid = create_person(db, "Jen")
-    cur = db.execute(
+    row = db.execute(
         "INSERT INTO macro_profiles (person_id, name, effective_on, kcal, "
-        "fat_pct, carb_pct, protein_pct) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "fat_pct, carb_pct, protein_pct) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (pid, "rest", "2026-07-14", 2115, 39, 18, 43),
-    )
+    ).fetchone()
     db.commit()
-    profile_id = cur.lastrowid
+    profile_id = row["id"]
     row = db.execute(
         "SELECT kcal_tol_pct, protein_tol_g, macro_pct_tol FROM macro_profiles "
         "WHERE id = ?", (profile_id,)

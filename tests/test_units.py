@@ -6,12 +6,12 @@ from yolk.units import to_grams
 
 @pytest.fixture
 def olive_oil(db):
-    cur = db.execute(
+    row = db.execute(
         "INSERT INTO foods (kind, name, role, kcal_100g, protein_g_100g, "
         "fat_g_100g, carb_g_100g, source) "
-        "VALUES ('item', 'Olive Oil', 'fat', 884, 0, 100, 0, 'usda')"
-    )
-    food_id = cur.lastrowid
+        "VALUES ('item', 'Olive Oil', 'fat', 884, 0, 100, 0, 'usda') RETURNING id"
+    ).fetchone()
+    food_id = row["id"]
     db.execute(
         "INSERT INTO food_units (food_id, unit, grams, is_default_display) "
         "VALUES (?, 'tbsp', 13.5, 1)",
@@ -47,12 +47,12 @@ def test_unknown_unit_raises_naming_food_and_unit(db, olive_oil):
 
 def test_unit_is_not_shared_between_foods(db, olive_oil):
     """A tbsp of one food is not a tbsp of another. Conversions are per-food."""
-    cur = db.execute(
+    row = db.execute(
         "INSERT INTO foods (kind, name, role, kcal_100g, protein_g_100g, "
         "fat_g_100g, carb_g_100g, source) "
-        "VALUES ('item', 'Mayo', 'fat', 680, 1, 75, 0, 'label')"
-    )
-    mayo_id = cur.lastrowid
+        "VALUES ('item', 'Mayo', 'fat', 680, 1, 75, 0, 'label') RETURNING id"
+    ).fetchone()
+    mayo_id = row["id"]
     db.commit()
     with pytest.raises(UnknownUnitError):
         to_grams(db, mayo_id, 1, "tbsp")
