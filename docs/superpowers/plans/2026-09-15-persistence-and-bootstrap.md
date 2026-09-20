@@ -22,7 +22,8 @@
 - New code annotates connections as `yolk.db.Connection`, never `sqlite3.Connection`.
 - Migrations are forward only. There are no down migrations.
 - Tests use `:memory:` databases and never touch the resolved database path.
-- The full suite is `uv run pytest`. It passes at 94 tests before this plan starts, and must pass at the end of every task.
+- The full suite is `uv run python -m pytest`. It passes at 94 tests before this plan starts, and must pass at the end of every task.
+- **Run tools as modules, not as console scripts.** Windows Smart App Control on this machine blocks the small generated launcher executables that a virtual environment puts in `Scripts/`, including `pytest.exe` and any `yolk.exe`. It allows the real interpreter. So `uv run pytest` fails while `uv run python -m pytest` works, and the same rule applies to this project's own command. The virtual environment at `.venv` must be created by `python -m venv` rather than by uv, so that its `python.exe` is a copy of the real interpreter instead of a generated launcher; `uv sync` then respects it.
 - Commit at the end of every task.
 
 ---
@@ -39,6 +40,7 @@
 | `src/yolk/seed.py` | Building Keto Plan A into a database from the fixture |
 | `src/yolk/snapshot.py` | Exporting every table to JSON and importing it back |
 | `src/yolk/cli.py` | The `yolk` command |
+| `src/yolk/__main__.py` | Entry point for `python -m yolk` |
 | `tests/test_migrate.py`, `tests/test_config.py`, `tests/test_seed.py`, `tests/test_snapshot.py`, `tests/test_cli.py` | Tests for the above |
 
 **Modified:**
@@ -195,7 +197,7 @@ def test_create_schema_still_builds_a_usable_database(db):
 
 - [ ] **Step 5: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_migrate.py -v`
+Run: `uv run python -m pytest tests/test_migrate.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'yolk.db.migrate'`
 
 - [ ] **Step 6: Write the migration runner**
@@ -348,12 +350,12 @@ def create_schema(conn: Connection) -> None:
 
 - [ ] **Step 8: Run the new tests**
 
-Run: `uv run pytest tests/test_migrate.py -v`
+Run: `uv run python -m pytest tests/test_migrate.py -v`
 Expected: PASS, 7 tests
 
 - [ ] **Step 9: Run the whole suite**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 101 tests. `tests/test_schema.py` must still pass untouched, because it asserts `expected <= names` and the new `schema_version` table is an addition.
 
 - [ ] **Step 10: Commit**
@@ -468,12 +470,12 @@ Add `import sqlite3` and `from yolk.db.migrate import MigrationError` to the imp
 
 - [ ] **Step 2: Run the tests**
 
-Run: `uv run pytest tests/test_migrate.py -v`
+Run: `uv run python -m pytest tests/test_migrate.py -v`
 Expected: PASS. If `test_rebuild_does_not_cascade_delete_the_children` fails, the runner is turning foreign keys off in the wrong place. The pragma must be executed after `conn.commit()` and before `executescript`, never inside the transaction.
 
 - [ ] **Step 3: Run the whole suite**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 105 tests
 
 - [ ] **Step 4: Commit**
@@ -504,7 +506,7 @@ Both changes exist to make a later Postgres port mechanical. `lastrowid` has no 
 
 - [ ] **Step 1: Confirm the existing tests cover every call site**
 
-Run: `uv run pytest tests/test_foods.py tests/test_people.py tests/test_recipes.py tests/test_evaluate.py -v`
+Run: `uv run python -m pytest tests/test_foods.py tests/test_people.py tests/test_recipes.py tests/test_evaluate.py -v`
 Expected: PASS. These create foods, recipes, people, profiles, slots, plans, and entries, so they exercise all seven sites. They are the safety net for this task; no new tests are needed.
 
 - [ ] **Step 2: Change the two sites in foods.py**
@@ -583,7 +585,7 @@ Expected: no output from either. If `grep` prints anything, a site was missed.
 
 - [ ] **Step 8: Run the whole suite**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 105 tests
 
 - [ ] **Step 9: Commit**
@@ -645,7 +647,7 @@ def test_a_user_path_is_expanded(monkeypatch):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_config.py -v`
+Run: `uv run python -m pytest tests/test_config.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'yolk.config'`
 
 - [ ] **Step 3: Write the module**
@@ -683,7 +685,7 @@ def database_path() -> Path:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `uv run pytest tests/test_config.py -v`
+Run: `uv run python -m pytest tests/test_config.py -v`
 Expected: PASS, 4 tests
 
 - [ ] **Step 5: Ignore the database file**
@@ -705,7 +707,7 @@ Expected: no output and exit status 1, meaning `data/` is tracked normally. If i
 
 - [ ] **Step 7: Run the whole suite and commit**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 109 tests
 
 ```bash
@@ -804,7 +806,7 @@ def test_seeding_twice_raises_rather_than_duplicating(db):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_seed.py -v`
+Run: `uv run python -m pytest tests/test_seed.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'yolk.seed'`
 
 - [ ] **Step 3: Let create_item record a verification date**
@@ -955,12 +957,12 @@ Leave the module docstring and every test below it untouched. They already unpac
 
 - [ ] **Step 6: Run the seed and golden tests**
 
-Run: `uv run pytest tests/test_seed.py tests/test_golden_keto_a.py -v`
+Run: `uv run python -m pytest tests/test_seed.py tests/test_golden_keto_a.py -v`
 Expected: PASS. The golden tests must still assert the same totals, unchanged.
 
 - [ ] **Step 7: Run the whole suite and commit**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 120 tests
 
 ```bash
@@ -1087,7 +1089,7 @@ def test_import_refuses_a_version_mismatch(seeded, tmp_path):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_snapshot.py -v`
+Run: `uv run python -m pytest tests/test_snapshot.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'yolk.snapshot'`
 
 - [ ] **Step 3: Write the module**
@@ -1236,12 +1238,12 @@ def import_database(conn: Connection, in_dir: Path = DEFAULT_DIR) -> dict[str, i
 
 - [ ] **Step 4: Run the tests**
 
-Run: `uv run pytest tests/test_snapshot.py -v`
+Run: `uv run python -m pytest tests/test_snapshot.py -v`
 Expected: PASS, 7 tests
 
 - [ ] **Step 5: Run the whole suite and commit**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 127 tests
 
 ```bash
@@ -1259,6 +1261,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `src/yolk/cli.py`
+- Create: `src/yolk/__main__.py`
 - Modify: `pyproject.toml`
 - Modify: `README.md`
 - Test: `tests/test_cli.py`
@@ -1342,7 +1345,7 @@ def test_a_command_on_a_missing_database_explains_itself(db_path, capsys):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_cli.py -v`
+Run: `uv run python -m pytest tests/test_cli.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'yolk.cli'`
 
 - [ ] **Step 3: Write the CLI**
@@ -1473,7 +1476,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Register the console script**
+- [ ] **Step 4: Register the console script and the module entry point**
 
 In `pyproject.toml`, add after the `[project.optional-dependencies]` block:
 
@@ -1482,15 +1485,32 @@ In `pyproject.toml`, add after the `[project.optional-dependencies]` block:
 yolk = "yolk.cli:main"
 ```
 
+Then create `src/yolk/__main__.py`, so the command can be run as a module:
+
+```python
+"""Entry point for `python -m yolk`.
+
+The console script above generates a small launcher executable in the
+virtual environment's Scripts directory. Windows Smart App Control blocks
+those, because a launcher stamped out locally has no reputation, while the
+interpreter it wraps does. Running the module skips the launcher entirely,
+so this is the invocation the documentation uses.
+"""
+
+from yolk.cli import main
+
+raise SystemExit(main())
+```
+
 - [ ] **Step 5: Run the tests**
 
-Run: `uv run pytest tests/test_cli.py -v`
+Run: `uv run python -m pytest tests/test_cli.py -v`
 Expected: PASS, 6 tests
 
 - [ ] **Step 6: Run it for real**
 
 ```bash
-uv run yolk init --seed
+uv run python -m yolk init --seed
 ```
 
 Expected: prints the created path, the applied migration, and the seeded plan id. Then confirm the file is ignored:
@@ -1504,7 +1524,7 @@ Expected: `yolk.db` does not appear.
 - [ ] **Step 7: Take the first export and look at it**
 
 ```bash
-uv run yolk export
+uv run python -m yolk export
 git status --short
 ```
 
@@ -1520,25 +1540,32 @@ Append to `README.md`:
 Requires Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync
+python -m venv .venv
+uv sync --extra dev
 cp .env.example .env   # then add your USDA key
-uv run yolk init --seed
+uv run python -m yolk init --seed
 ```
+
+Create the virtual environment with `python -m venv`, not with uv. Windows
+Smart App Control blocks the small launcher executables a tool generates
+inside `Scripts/`, and uv's environments use one; a stdlib environment copies
+the real interpreter instead. For the same reason, run everything as a module:
+`uv run python -m pytest`, not `uv run pytest`.
 
 `yolk init` creates the database and applies every migration. `--seed` loads
 Keto Plan A so there is something real to look at. Get a free USDA key at
 https://api.data.gov/signup.
 
-The database file itself is not committed. `uv run yolk export` writes every
-table to `data/` as JSON, and that is what git tracks. `uv run yolk import`
+The database file itself is not committed. `uv run python -m yolk export` writes every
+table to `data/` as JSON, and that is what git tracks. `uv run python -m yolk import`
 loads it back into an empty database.
 
 | Command | Does |
 |---|---|
-| `uv run yolk init [--seed]` | Create the database, apply migrations, optionally seed |
-| `uv run yolk migrate` | Apply pending migrations |
-| `uv run yolk export [--out DIR]` | Write every table to JSON |
-| `uv run yolk import [--from DIR]` | Load JSON into an empty database |
+| `uv run python -m yolk init [--seed]` | Create the database, apply migrations, optionally seed |
+| `uv run python -m yolk migrate` | Apply pending migrations |
+| `uv run python -m yolk export [--out DIR]` | Write every table to JSON |
+| `uv run python -m yolk import [--from DIR]` | Load JSON into an empty database |
 
 Set `YOLK_DB` to use a database somewhere other than `yolk.db` in the repo root.
 ```
@@ -1555,11 +1582,11 @@ The README tells a new person to copy it, and `.env` itself stays ignored.
 
 - [ ] **Step 10: Run the whole suite and commit**
 
-Run: `uv run pytest`
+Run: `uv run python -m pytest`
 Expected: PASS, 133 tests
 
 ```bash
-git add src/yolk/cli.py tests/test_cli.py pyproject.toml README.md .env.example
+git add src/yolk/cli.py src/yolk/__main__.py tests/test_cli.py pyproject.toml README.md .env.example
 git commit -m "feat: add the yolk command for init, migrate, export, and import
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
@@ -1569,8 +1596,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Done when
 
-- `uv run pytest` passes, at 133 tests.
-- `uv run yolk init --seed` on a fresh checkout produces a database whose Keto Plan A evaluation matches the golden test's totals.
+- `uv run python -m pytest` passes, at 133 tests.
+- `uv run python -m yolk init --seed` on a fresh checkout produces a database whose Keto Plan A evaluation matches the golden test's totals.
 - `grep -rn "lastrowid\|sqlite3.Connection" src` prints nothing.
 - `git status --short` never shows `yolk.db`.
 - Export, import into a fresh database, and export again produce identical files.
