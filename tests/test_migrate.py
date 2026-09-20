@@ -153,3 +153,71 @@ def test_foreign_keys_are_enforced_again_after_a_migration(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO child (id, parent_id) VALUES (2, 999)")
     conn.close()
+
+
+# Layer 1: a migration that manages its own transaction is rejected before it
+# runs at all, so the data it would have touched is never even at risk.
+def test_a_migration_with_a_trailing_commit_is_rejected_not_applied(tmp_path):
+    conn = _two_table_database(tmp_path)
+    (tmp_path / "0002_drop_a_row.sql").write_text(
+        "DELETE FROM parent WHERE id = 1;\nCOMMIT;\n", encoding="utf-8"
+    )
+
+    with pytest.raises(MigrationError, match="COMMIT"):
+        apply_migrations(conn, tmp_path)
+
+    # Rejected before executescript ever ran, so the DELETE never happened
+    # and the row is still there -- not "rolled back", never applied.
+    assert conn.execute("SELECT count(*) AS n FROM parent").fetchone()["n"] == 1
+    assert conn.execute("SELECT count(*) AS n FROM child").fetchone()["n"] == 1
+    versions = {row["version"] for row in conn.execute("SELECT version FROM schema_version")}
+    assert versions == {1}
+    conn.close()
+
+
+@pytest.mark.parametrize("keyword", ["BEGIN", "begin", "Rollback", "SAVEPOINT", "RELEASE"])
+def test_every_transaction_control_keyword_is_rejected(tmp_path, keyword):
+    conn = _two_table_database(tmp_path)
+    (tmp_path / "0002_bad.sql").write_text(
+        f"{keyword} sp1;\nDELETE FROM parent WHERE id = 1;\n", encoding="utf-8"
+    )
+
+    with pytest.raises(MigrationError, match="(?i)transaction control"):
+        apply_migrations(conn, tmp_path)
+    conn.close()
+
+
+def test_a_word_that_merely_contains_a_keyword_is_not_rejected(tmp_path):
+    """RENAME contains no reserved keyword, but this guards the whole-word
+    matching so a future rename of, say, a column called `appendix` cannot
+    be mistaken for APPEND/END."""
+    conn = _two_table_database(tmp_path)
+    (tmp_path / "0002_widen_label.sql").write_text(REBUILD_SQL, encoding="utf-8")
+
+    assert apply_migrations(conn, tmp_path) == [2]
+    conn.close()
+
+
+# Layer 2: defense in depth. If a keyword somehow slipped past the pre-flight
+# regex, the runner must still notice that the transaction closed early,
+# rather than reporting a rollback that did not happen.
+def test_post_hoc_check_catches_a_transaction_the_preflight_check_missed(
+    tmp_path, monkeypatch
+):
+    import yolk.db.migrate as migrate
+
+    conn = _two_table_database(tmp_path)
+    (tmp_path / "0002_drop_a_row.sql").write_text(
+        "DELETE FROM parent WHERE id = 1;\nCOMMIT;\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(migrate, "_reject_transaction_control", lambda path, text: None)
+
+    with pytest.raises(MigrationError, match="closed its own transaction"):
+        apply_migrations(conn, tmp_path)
+
+    # With the pre-flight check disabled, the migration's own COMMIT really
+    # did commit -- the row is gone. This is exactly why the pre-flight
+    # rejection above is layer one, not the only layer: by the time this
+    # check runs, the damage this test simulates is no longer undoable.
+    assert conn.execute("SELECT count(*) AS n FROM parent").fetchone()["n"] == 0
+    conn.close()

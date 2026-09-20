@@ -3,6 +3,14 @@
 Migrations are the single source of truth for the schema. A fresh database,
 including every test's in-memory database, is built by applying all of them
 in order.
+
+Migration files contain no transaction control (no BEGIN, COMMIT, ROLLBACK,
+SAVEPOINT, RELEASE, or END) and no pragmas. The runner owns both: it wraps
+each migration in the transaction that lets `PRAGMA foreign_key_check` run
+before anything commits, and it turns `PRAGMA foreign_keys` off and back on
+around the script so a table rebuild can drop a parent without cascading. A
+migration that took either of those over would silently break the
+all-or-nothing guarantee.
 """
 
 from __future__ import annotations
@@ -17,6 +25,14 @@ from yolk.errors import YolkError
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 _FILENAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+
+# Transaction-control keywords a migration must never contain: the runner
+# owns BEGIN/COMMIT/ROLLBACK so the foreign-key check can run before anything
+# is committed. Matched whole-word and case-insensitively so this cannot be
+# defeated by "begin;" or dodged by "beginning" tripping a false positive.
+_TRANSACTION_CONTROL = re.compile(
+    r"\b(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|END)\b", re.IGNORECASE
+)
 
 _VERSION_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -71,6 +87,28 @@ def apply_migrations(
     return applied_now
 
 
+def _reject_transaction_control(path: Path, text: str) -> None:
+    """Refuse a migration that manages its own transaction, before it runs.
+
+    `_apply_one` relies on the migration script never closing the transaction
+    it opens on its behalf. A migration that ends with a `COMMIT` (the
+    convention most migration tools expect) would make `executescript` commit
+    the migration's work before `PRAGMA foreign_key_check` runs, so a later
+    `conn.rollback()` would roll back nothing but the `schema_version` insert
+    -- reporting a rollback that never happened while real data is destroyed.
+    Rejecting the keyword up front means that damage can never start.
+    """
+    match = _TRANSACTION_CONTROL.search(text)
+    if match is not None:
+        raise MigrationError(
+            f"Migration {path.name} contains {match.group(1)!r}, which is "
+            f"transaction control. The runner owns transaction control so "
+            f"that the foreign-key check can run before anything commits. "
+            f"Remove the statement; migrations must not manage their own "
+            f"transactions or pragmas."
+        )
+
+
 def _apply_one(conn: Connection, version: int, path: Path) -> None:
     """Apply one migration, all of it or none of it.
 
@@ -84,11 +122,30 @@ def _apply_one(conn: Connection, version: int, path: Path) -> None:
     what lets the foreign key check run before anything is committed.
     `executescript` commits any pending transaction before it runs, so the
     BEGIN has to be inside the script rather than issued separately.
+
+    That guarantee only holds if the migration itself never closes the
+    transaction, so `_reject_transaction_control` refuses the migration
+    up front if it contains BEGIN/COMMIT/ROLLBACK/SAVEPOINT/RELEASE/END, and
+    `conn.in_transaction` is checked again after `executescript` runs in case
+    something slips past that check (a keyword hidden in a string literal, or
+    a quoting trick). If the transaction closed early, part of the migration
+    may already be permanent -- there is nothing left to roll back.
     """
+    text = path.read_text(encoding="utf-8")
+    _reject_transaction_control(path, text)
+
     conn.commit()
     conn.execute("PRAGMA foreign_keys = OFF")
     try:
-        conn.executescript("BEGIN;\n" + path.read_text(encoding="utf-8"))
+        conn.executescript("BEGIN;\n" + text)
+        if not conn.in_transaction:
+            raise MigrationError(
+                f"Migration {path.name} closed its own transaction (it contains a "
+                f"COMMIT, ROLLBACK or END). The runner owns transaction control so "
+                f"that the foreign-key check can run before anything is committed. "
+                f"Remove the transaction statement; part of this migration may "
+                f"already be permanent."
+            )
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             conn.rollback()
