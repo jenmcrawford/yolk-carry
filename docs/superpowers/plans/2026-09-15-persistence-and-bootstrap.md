@@ -14,7 +14,8 @@
 
 - Python `>=3.14`, managed by `uv`. Run everything as `uv run <cmd>`.
 - No new runtime dependencies in this slice. `httpx` and `python-dotenv` are the only ones, and `pytest` is the only dev dependency.
-- Portable SQL only. No SQLite-only SQL or functions.
+- Portable SQL only in schema and queries. No SQLite-only SQL or functions there.
+- SQLite pragmas for transaction and foreign-key control are exempt from that rule. Turning foreign keys off around a load or a table rebuild, and running `PRAGMA foreign_key_check` before committing, is plumbing rather than schema: Postgres does the same job with deferrable constraints, and a port replaces those few lines. Keeping the check matters more than avoiding the pragma.
 - SQL placeholders stay `?`. Do not convert them.
 - Booleans are `INTEGER` with `CHECK (x IN (0, 1))`. Dates are ISO-8601 `TEXT`.
 - New code uses `RETURNING id`, never `cursor.lastrowid`.

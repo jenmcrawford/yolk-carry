@@ -388,7 +388,11 @@ nothing today:
 
 Rules for all new code:
 
-- No SQLite-only SQL or functions.
+- No SQLite-only SQL or functions in the schema or in queries. SQLite pragmas for transaction
+  and foreign-key control are exempt: turning foreign keys off around a load or a table rebuild,
+  and running `PRAGMA foreign_key_check` before committing, is plumbing rather than schema.
+  Postgres does the same job with deferrable constraints, and the port replaces those few lines.
+  Keeping the check matters more than avoiding the pragma.
 - Booleans stay `INTEGER` with a `CHECK (x IN (0, 1))`, and dates stay ISO-8601 `TEXT`, matching
   the existing schema.
 - Placeholders stay `?`. Converting to `%s` is a mechanical change at port time.
