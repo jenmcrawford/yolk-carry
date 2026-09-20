@@ -1,0 +1,65 @@
+import pytest
+
+from yolk.cli import main
+from yolk.db.connection import connect
+
+
+@pytest.fixture
+def db_path(monkeypatch, tmp_path):
+    path = tmp_path / "yolk.db"
+    monkeypatch.setenv("YOLK_DB", str(path))
+    return path
+
+
+def test_init_creates_a_migrated_database(db_path, capsys):
+    assert main(["init"]) == 0
+    assert db_path.is_file()
+
+    conn = connect(db_path)
+    names = {
+        row["name"]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    assert "foods" in names
+    assert "schema_version" in names
+    conn.close()
+
+
+def test_init_twice_is_a_no_op(db_path):
+    assert main(["init"]) == 0
+    assert main(["init"]) == 0
+
+
+def test_init_with_seed_creates_the_plan(db_path):
+    assert main(["init", "--seed"]) == 0
+    conn = connect(db_path)
+    row = conn.execute("SELECT name FROM day_plans").fetchone()
+    assert row["name"] == "Keto Meal Plan A"
+    conn.close()
+
+
+def test_seeding_an_already_seeded_database_is_refused(db_path, capsys):
+    main(["init", "--seed"])
+    assert main(["init", "--seed"]) == 1
+    assert "already has" in capsys.readouterr().err
+
+
+def test_export_then_import_into_a_fresh_database(db_path, tmp_path, monkeypatch):
+    main(["init", "--seed"])
+    out = tmp_path / "export"
+    assert main(["export", "--out", str(out)]) == 0
+    assert (out / "foods.json").is_file()
+
+    second = tmp_path / "second.db"
+    monkeypatch.setenv("YOLK_DB", str(second))
+    assert main(["init"]) == 0
+    assert main(["import", "--from", str(out)]) == 0
+
+    conn = connect(second)
+    assert conn.execute("SELECT count(*) AS n FROM foods").fetchone()["n"] > 0
+    conn.close()
+
+
+def test_a_command_on_a_missing_database_explains_itself(db_path, capsys):
+    assert main(["export"]) == 1
+    assert "yolk init" in capsys.readouterr().err
