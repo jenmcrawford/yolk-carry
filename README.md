@@ -26,8 +26,10 @@ Keto Plan A so there is something real to look at. Get a free USDA key at
 https://api.data.gov/signup.
 
 The database file itself is not committed. `uv run python -m yolk export` writes every
-table to `data/` as JSON, and that is what git tracks. `uv run python -m yolk import`
-loads it back into an empty database.
+table to `data/` as JSON, the durable text copy meant to be handed to another person
+later. Committing it is a separate, deliberate decision that has not been made yet, so
+`data/` is git-ignored for now. `uv run python -m yolk import` loads an export back
+into an empty database.
 
 | Command | Does |
 |---|---|

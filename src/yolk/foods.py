@@ -29,11 +29,17 @@ def create_item(
     verified_on: str | None = None,
     units: dict[str, float] | None = None,
     notes: str | None = None,
+    commit: bool = True,
 ) -> int:
     """Create a purchased food. Macros are per 100 g.
 
     The food row and its unit conversions are written in one transaction: a
     bad unit must not leave a food behind with no way to measure it.
+
+    `commit=False` lets a caller that is building several rows as one larger
+    transaction (`yolk.seed.seed_keto_plan_a`, for instance) defer the commit
+    to itself, so a failure elsewhere in that larger unit of work still rolls
+    this food back too.
     """
     if verified and verified_on is None:
         verified_on = date.today().isoformat()
@@ -59,7 +65,8 @@ def create_item(
     except Exception:
         conn.rollback()
         raise
-    conn.commit()
+    if commit:
+        conn.commit()
     return food_id
 
 

@@ -25,6 +25,7 @@ def create_day_plan(
     name: str,
     notes: str | None = None,
     parent_plan_id: int | None = None,
+    commit: bool = True,
 ) -> int:
     row = conn.execute(
         "INSERT INTO day_plans (person_id, profile_id, name, parent_plan_id, "
@@ -34,7 +35,8 @@ def create_day_plan(
             datetime.now(timezone.utc).isoformat(), notes,
         ),
     ).fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     return row["id"]
 
 
@@ -49,6 +51,7 @@ def add_entry(
     flex: bool = False,
     flex_min_g: float | None = None,
     flex_max_g: float | None = None,
+    commit: bool = True,
 ) -> int:
     row = conn.execute(
         "INSERT INTO day_plan_entries (day_plan_id, slot_no, food_id, qty, unit, "
@@ -56,7 +59,8 @@ def add_entry(
         (day_plan_id, slot_no, food_id, qty, unit,
          int(flex), flex_min_g, flex_max_g),
     ).fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     return row["id"]
 
 

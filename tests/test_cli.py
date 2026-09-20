@@ -63,3 +63,30 @@ def test_export_then_import_into_a_fresh_database(db_path, tmp_path, monkeypatch
 def test_a_command_on_a_missing_database_explains_itself(db_path, capsys):
     assert main(["export"]) == 1
     assert "yolk init" in capsys.readouterr().err
+
+
+def test_migrate_subcommand_reports_up_to_date(db_path, capsys):
+    """The only subcommand with no prior coverage, and the one that will run
+    against the real, unrecreatable database once migration 0002 lands."""
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    assert main(["migrate"]) == 0
+    assert "up to date" in capsys.readouterr().out
+
+
+def test_import_with_malformed_json_fails_cleanly_instead_of_a_traceback(
+    db_path, tmp_path, monkeypatch, capsys
+):
+    main(["init", "--seed"])
+    out = tmp_path / "export"
+    main(["export", "--out", str(out)])
+    (out / "foods.json").write_text("{not valid json", encoding="utf-8")
+
+    second = tmp_path / "second.db"
+    monkeypatch.setenv("YOLK_DB", str(second))
+    main(["init"])
+
+    # main() returning cleanly (rather than the test failing on an uncaught
+    # json.JSONDecodeError propagating out of main) is the assertion here.
+    assert main(["import", "--from", str(out)]) == 1
+    assert capsys.readouterr().err.strip() != ""

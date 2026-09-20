@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -112,7 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return args.func(args)
-    except YolkError as error:
+    except (YolkError, sqlite3.Error, OSError, json.JSONDecodeError) as error:
+        # These are ordinary, expected failure modes -- a constraint the
+        # fixture violates, an export with a malformed JSON file, a database
+        # path that cannot be written -- not bugs. A user should see the
+        # message, not a traceback.
         print(str(error), file=sys.stderr)
         return 1
 

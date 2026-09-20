@@ -12,11 +12,12 @@ from yolk.db import Connection
 from yolk.macros import Macros, profile_targets
 
 
-def create_person(conn: Connection, name: str) -> int:
+def create_person(conn: Connection, name: str, *, commit: bool = True) -> int:
     row = conn.execute(
         "INSERT INTO people (name) VALUES (?) RETURNING id", (name,)
     ).fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     return row["id"]
 
 
@@ -33,6 +34,7 @@ def create_profile(
     kcal_tol_pct: float = 1.0,
     protein_tol_g: float = 8.0,
     macro_pct_tol: float = 3.0,
+    commit: bool = True,
 ) -> int:
     row = conn.execute(
         "INSERT INTO macro_profiles (person_id, name, effective_on, kcal, fat_pct, "
@@ -43,7 +45,8 @@ def create_profile(
             kcal_tol_pct, protein_tol_g, macro_pct_tol,
         ),
     ).fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     return row["id"]
 
 
@@ -91,6 +94,7 @@ def create_slot(
     portable: bool = False,
     fixed: bool = False,
     notes: str | None = None,
+    commit: bool = True,
 ) -> int:
     try:
         row = conn.execute(
@@ -110,5 +114,6 @@ def create_slot(
     except Exception:
         conn.rollback()
         raise
-    conn.commit()
+    if commit:
+        conn.commit()
     return slot_id

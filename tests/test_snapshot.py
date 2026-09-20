@@ -49,6 +49,11 @@ def test_export_is_deterministic(seeded, tmp_path):
 
 def test_round_trip_is_byte_identical(seeded, tmp_path):
     out_a, out_b = tmp_path / "a", tmp_path / "b"
+    # A deliberately old applied_on. Without restoring it on import, the
+    # fresh database's own migration run stamps today's date instead, and
+    # the re-export only matches the first export within a 24-hour window.
+    seeded.execute("UPDATE schema_version SET applied_on = '2020-01-01'")
+    seeded.commit()
     export_database(seeded, out_a)
 
     restored = _fresh()
@@ -57,6 +62,10 @@ def test_round_trip_is_byte_identical(seeded, tmp_path):
 
     for path in sorted(out_a.glob("*.json")):
         assert path.read_bytes() == (out_b / path.name).read_bytes(), path.name
+    assert (
+        json.loads((out_b / "schema_version.json").read_text())[0]["applied_on"]
+        == "2020-01-01"
+    )
     restored.close()
 
 
@@ -87,5 +96,23 @@ def test_import_refuses_a_version_mismatch(seeded, tmp_path):
     )
     restored = _fresh()
     with pytest.raises(SnapshotError, match="version"):
+        import_database(restored, tmp_path)
+    restored.close()
+
+
+def test_import_refuses_a_database_that_lags_behind_the_export(seeded, tmp_path):
+    """latest_version() only checks the export against the code on disk. A
+    database that exists but was migrated to an older version must be caught
+    here too, rather than failing deep in the insert loop with an opaque
+    OperationalError about a missing column."""
+    export_database(seeded, tmp_path)
+    restored = _fresh()
+    restored.execute("DELETE FROM schema_version")
+    restored.execute(
+        "INSERT INTO schema_version (version, applied_on) VALUES (0, '2020-01-01')"
+    )
+    restored.commit()
+
+    with pytest.raises(SnapshotError, match="database is at"):
         import_database(restored, tmp_path)
     restored.close()

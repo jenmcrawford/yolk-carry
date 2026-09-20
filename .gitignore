@@ -225,3 +225,8 @@ yolk.db
 yolk.db-journal
 yolk.db-wal
 yolk.db-shm
+
+# The JSON export holds real personal health data (macro targets, meal plans,
+# food list). Whether to publish it is a deliberate decision that has not
+# been made. Remove this line if and when that decision is made.
+data/

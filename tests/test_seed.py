@@ -1,9 +1,10 @@
+import json
 import sqlite3
 
 import pytest
 
 from yolk.planning.evaluate import evaluate
-from yolk.seed import parse_time_of_day, seed_keto_plan_a
+from yolk.seed import FIXTURE_PATH, parse_time_of_day, seed_keto_plan_a
 
 
 @pytest.mark.parametrize(
@@ -58,3 +59,22 @@ def test_seeding_twice_raises_rather_than_duplicating(db):
     seed_keto_plan_a(db)
     with pytest.raises(sqlite3.IntegrityError):
         seed_keto_plan_a(db)
+
+
+def test_a_failed_seed_leaves_the_database_empty(db, tmp_path):
+    """The whole seed is one transaction: a fixture problem partway through
+    (here, the last slot's unparseable name) must not leave the person,
+    profile, plan, and foods from the slots before it behind. If it did, the
+    day_plans guard in `yolk init --seed` would refuse to retry, and deleting
+    the database file would be the only way out."""
+    spec = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert len(spec["slots"]) > 1, "need at least one good slot before the bad one"
+    spec["slots"][-1]["name"] = "Meal Whenever - no time here"
+    broken = tmp_path / "broken_keto_plan_a.json"
+    broken.write_text(json.dumps(spec), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="no time"):
+        seed_keto_plan_a(db, fixture_path=broken)
+
+    for table in ("people", "macro_profiles", "day_plans", "slot_templates", "foods"):
+        assert db.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"] == 0
