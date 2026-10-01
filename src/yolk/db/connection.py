@@ -9,9 +9,15 @@ from yolk.db import Connection
 from yolk.db.migrate import apply_migrations
 
 
-def connect(path: str | Path) -> Connection:
-    """Open a connection with row access by name and foreign keys enforced."""
-    conn = sqlite3.connect(path)
+def connect(path: str | Path, *, check_same_thread: bool = True) -> Connection:
+    """Open a connection with row access by name and foreign keys enforced.
+
+    The web app passes check_same_thread=False: FastAPI may open a request's
+    connection on one threadpool thread and use it on another. A connection
+    there belongs to exactly one request and is never used concurrently, so
+    sqlite3's same-thread guard protects nothing. Everything else keeps it.
+    """
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

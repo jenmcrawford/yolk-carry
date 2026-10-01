@@ -2,6 +2,7 @@ import pytest
 
 from yolk.people import (
     active_profile, create_person, create_profile, create_slot, targets_for_profile,
+    list_people, slot_names,
 )
 
 
@@ -109,3 +110,30 @@ def test_slot_with_roles(db):
         (slot_id,),
     ).fetchall()
     assert [r["role"] for r in rows] == ["protein", "sauce", "veg"]
+
+
+def test_list_people_is_ordered_by_id(db):
+    first = create_person(db, "Jen")
+    second = create_person(db, "Avery")
+    people = list_people(db)
+    assert [(p.id, p.name) for p in people] == [(first, "Jen"), (second, "Avery")]
+
+
+def test_list_people_is_empty_on_a_fresh_database(db):
+    assert list_people(db) == []
+
+
+def test_slot_names_maps_slot_numbers_for_one_profile(db):
+    pid = create_person(db, "Jen")
+    training = create_profile(
+        db, pid, name="training", effective_on="2026-07-14",
+        kcal=2150, fat_pct=34, carb_pct=28, protein_pct=38,
+    )
+    rest = create_profile(
+        db, pid, name="rest", effective_on="2026-07-14",
+        kcal=2115, fat_pct=39, carb_pct=18, protein_pct=43,
+    )
+    create_slot(db, pid, training, slot_no=1, name="Wake Up", time_of_day="06:30")
+    create_slot(db, pid, training, slot_no=6, name="Dinner", time_of_day="18:00")
+    create_slot(db, pid, rest, slot_no=1, name="Rest breakfast", time_of_day="08:00")
+    assert slot_names(db, training) == {1: "Wake Up", 6: "Dinner"}

@@ -73,6 +73,12 @@ def applied(conn: Connection) -> set[int]:
     return {row["version"] for row in conn.execute("SELECT version FROM schema_version")}
 
 
+def pending(conn: Connection, directory: Path = MIGRATIONS_DIR) -> list[int]:
+    """Versions on disk that this database has not applied yet, in order."""
+    done = applied(conn)
+    return [version for version, _ in available(directory) if version not in done]
+
+
 def apply_migrations(
     conn: Connection, directory: Path = MIGRATIONS_DIR
 ) -> list[int]:

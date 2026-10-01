@@ -7,6 +7,7 @@ body composition changes is a new row and old plans stay interpretable.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 
 from yolk.db import Connection
 from yolk.macros import Macros, profile_targets
@@ -19,6 +20,17 @@ def create_person(conn: Connection, name: str, *, commit: bool = True) -> int:
     if commit:
         conn.commit()
     return row["id"]
+
+
+@dataclass(frozen=True)
+class Person:
+    id: int
+    name: str
+
+
+def list_people(conn: Connection) -> list[Person]:
+    rows = conn.execute("SELECT id, name FROM people ORDER BY id").fetchall()
+    return [Person(id=row["id"], name=row["name"]) for row in rows]
 
 
 def create_profile(
@@ -117,3 +129,13 @@ def create_slot(
     if commit:
         conn.commit()
     return slot_id
+
+
+def slot_names(conn: Connection, profile_id: int) -> dict[int, str]:
+    """Slot number to slot template name, for one profile's slots."""
+    rows = conn.execute(
+        "SELECT slot_no, name FROM slot_templates WHERE profile_id = ? "
+        "ORDER BY slot_no",
+        (profile_id,),
+    ).fetchall()
+    return {row["slot_no"]: row["name"] for row in rows}
