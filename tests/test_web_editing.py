@@ -121,6 +121,7 @@ def test_the_picker_lists_foods_with_add_buttons(client, seeded):
     assert f'action="/drafts/{draft}/entries"' in response.text
     assert 'name="slot_no" value="1"' in response.text
     assert "hx-post=" in response.text
+    assert 'hx-get="/foods/search"' in response.text
     assert "<html" not in response.text
 
 
@@ -131,6 +132,7 @@ def test_the_picker_without_htmx_is_a_full_page_of_plain_forms(client, seeded):
     assert "Back to" in response.text
     assert f'action="/drafts/{draft}/entries"' in response.text
     assert "hx-post=" not in response.text
+    assert "hx-get=" not in response.text
 
 
 def test_an_entry_from_another_plan_is_not_found(client, seeded):
