@@ -221,7 +221,7 @@ redirects to `/drafts/{draft_id}`.
 | Non-positive or non-numeric amount | Inline message on that row; nothing written. |
 | Unknown route, unknown plan or draft id, malformed path or form value | The app's HTML error page with the right status (404 or 422), not FastAPI's JSON. |
 | Plan or draft belonging to another person | 404. The person picker can never leave you editing someone else's plan. |
-| POST whose `Origin` (or `Referer` when `Origin` is absent) host is not `127.0.0.1` or `localhost`, or that carries neither | 403. Another website cannot submit edits. This sits on top of slice 2's Host check. |
+| POST whose `Origin` (or `Referer` when `Origin` is absent) is not the same origin as the app (same scheme, host and port, with the host `127.0.0.1` or `localhost`), or that carries neither | 403. Another website cannot submit edits. This sits on top of slice 2's Host check. |
 | Unexpected exception | Unchanged: the plain error page; the traceback goes to the console. |
 
 `error.html` takes an explicit `title` in place of today's "any message means Not found".

@@ -30,9 +30,25 @@ def test_a_post_with_neither_origin_nor_referer_is_refused(seeded):
 def test_a_post_with_a_same_machine_referer_is_allowed(seeded):
     response = _bare_client(seeded[0]).post(
         "/person", data={"person_id": 1},
-        headers={"referer": "http://localhost:8000/plans"}, follow_redirects=False,
+        headers={"referer": "http://127.0.0.1/plans"}, follow_redirects=False,
     )
     assert response.status_code == 303
+
+
+def test_a_post_from_another_local_port_is_refused(client):
+    response = client.post(
+        "/person", data={"person_id": 1},
+        headers={"origin": "http://127.0.0.1:3000"}, follow_redirects=False,
+    )
+    assert response.status_code == 403
+
+
+def test_a_post_with_a_null_origin_is_refused(client):
+    response = client.post(
+        "/person", data={"person_id": 1},
+        headers={"origin": "null"}, follow_redirects=False,
+    )
+    assert response.status_code == 403
 
 
 def test_an_unknown_address_gets_the_html_error_page(client):

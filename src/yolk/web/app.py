@@ -34,11 +34,20 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 def _from_this_app(request: Request) -> bool:
     """Whether a request that changes something came from this app's pages.
 
-    Browsers send Origin with every POST and usually Referer too. A request
-    carrying neither is refused rather than trusted.
+    Browsers send Origin with every POST and usually Referer too. The source
+    must be this app's own origin: the same host and port as the request, on
+    an allowed host. Another local server on a different port is refused, and
+    so is a request carrying neither header.
     """
     source = request.headers.get("origin") or request.headers.get("referer")
-    return source is not None and urlsplit(source).hostname in ALLOWED_HOSTS
+    if source is None:
+        return False
+    parts = urlsplit(source)
+    return (
+        parts.scheme == request.url.scheme
+        and parts.hostname in ALLOWED_HOSTS
+        and parts.netloc == request.headers.get("host")
+    )
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
