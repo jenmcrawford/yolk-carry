@@ -59,7 +59,7 @@ th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
 td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 tfoot td { font-weight: 600; border-bottom: none; }
 
-.slot, .totals, .notice {
+.slot, .totals, .notice, .results {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -77,3 +77,37 @@ tfoot td { font-weight: 600; border-bottom: none; }
 .muted { color: var(--muted); }
 
 pre { background: var(--code-bg); padding: 0.75rem; border-radius: 6px; overflow-x: auto; }
+
+header.site nav { display: flex; gap: 1rem; }
+
+form.search { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+form.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fail);
+  background: var(--code-bg);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

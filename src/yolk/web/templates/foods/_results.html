@@ -1,0 +1,40 @@
+{# Needs: foods (list[FoodSummary]), query (str). #}
+{% if foods %}
+<section class="results">
+  <table>
+    <thead>
+      <tr>
+        <th>Food</th><th>Role</th>
+        <th class="num">kcal</th><th class="num">Protein</th>
+        <th class="num">Fat</th><th class="num">Carbs</th>
+        <th>Units</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for food in foods %}
+      <tr>
+        <td>
+          {{ food.name }}{% if food.brand %} <span class="muted">{{ food.brand }}</span>{% endif %}
+          {% if not food.verified %}<span class="badge">unchecked</span>{% endif %}
+        </td>
+        <td>{{ food.role }}</td>
+        {% if food.per_100g %}
+        <td class="num">{{ "%.0f"|format(food.per_100g.kcal) }}</td>
+        <td class="num">{{ "%.1f"|format(food.per_100g.protein_g) }}</td>
+        <td class="num">{{ "%.1f"|format(food.per_100g.fat_g) }}</td>
+        <td class="num">{{ "%.1f"|format(food.per_100g.carb_g) }}</td>
+        {% else %}
+        <td colspan="4" class="muted">not computed</td>
+        {% endif %}
+        <td>{% for unit, grams in food.units %}{{ unit }} = {{ "%g"|format(grams) }} g{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Macros per 100 g.</p>
+</section>
+{% elif query %}
+<p>No foods match “{{ query }}”.</p>
+{% else %}
+<p>No foods yet.</p>
+{% endif %}
