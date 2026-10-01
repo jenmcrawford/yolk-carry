@@ -273,3 +273,23 @@ def test_an_unknown_food_is_refused_before_anything_is_written(db, keto):
     with pytest.raises(LookupError, match="999999"):
         drafts.replace_entry_food(db, entry["id"], 999_999, qty=1, unit="g")
     assert _entries(db, draft) == before
+
+
+def test_a_failed_save_over_leaves_the_saved_plan_and_draft_intact(
+    db, keto, monkeypatch
+):
+    draft = drafts.start_draft(db, keto)
+    entry = _first_entry(db, draft)
+    drafts.update_entry(db, entry["id"], qty=entry["qty"] * 2, unit=entry["unit"])
+    saved_entries, draft_entries = _entries(db, keto), _entries(db, draft)
+
+    def explode(conn, from_plan, to_plan):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(drafts, "_copy_entries", explode)
+    with pytest.raises(RuntimeError):
+        drafts.save_over(db, draft)
+
+    assert _entries(db, keto) == saved_entries
+    assert _plan(db, draft)["status"] == "draft"
+    assert _entries(db, draft) == draft_entries

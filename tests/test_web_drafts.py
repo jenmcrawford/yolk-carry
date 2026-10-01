@@ -1,3 +1,5 @@
+import pytest
+
 from yolk.db.connection import connect
 from yolk.people import create_person, create_profile
 from yolk.planning import drafts
@@ -161,3 +163,41 @@ def test_another_persons_draft_is_not_found(client, seeded):
         return drafts.start_blank_draft(conn, sam, profile, "Sam plan")
     draft = _with_conn(seeded[0], sams_draft)
     assert client.get(f"/drafts/{draft}").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "route, data",
+    [
+        ("save-as-new", {"name": "Stolen"}),
+        ("discard", {}),
+        ("save-over", {}),
+        ("entries", {"slot_no": "1", "food_id": "FOOD"}),
+    ],
+)
+def test_another_persons_draft_cannot_be_posted_to(client, seeded, route, data):
+    path, _, _ = seeded
+
+    def make_sam_draft(conn):
+        sam = create_person(conn, "Sam")
+        profile = create_profile(
+            conn, sam, name="rest", effective_on="2026-07-14",
+            kcal=2000, fat_pct=40, carb_pct=20, protein_pct=40,
+        )
+        food = conn.execute("SELECT id FROM foods LIMIT 1").fetchone()["id"]
+        return drafts.start_blank_draft(conn, sam, profile, "Sam draft"), food
+
+    sam_draft, food = _with_conn(path, make_sam_draft)
+    data = {k: str(food) if v == "FOOD" else v for k, v in data.items()}
+
+    response = client.post(f"/drafts/{sam_draft}/{route}", data=data, follow_redirects=False)
+
+    assert response.status_code == 404
+    still_there = _with_conn(path, lambda c: (
+        c.execute("SELECT status FROM day_plans WHERE id = ?", (sam_draft,)).fetchone(),
+        c.execute(
+            "SELECT count(*) AS n FROM day_plan_entries WHERE day_plan_id = ?",
+            (sam_draft,),
+        ).fetchone()["n"],
+    ))
+    assert still_there[0]["status"] == "draft"
+    assert still_there[1] == 0
