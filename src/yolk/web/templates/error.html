@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Error · yolk{% endblock %}
+{% block content %}
+<section class="notice">
+  {% if message %}
+  <h1>Not found</h1>
+  <p>{{ message }}</p>
+  {% else %}
+  <h1>Something went wrong</h1>
+  <p>The details are in the terminal running <code>yolk serve</code>.</p>
+  {% endif %}
+  <p><a href="/plans">Back to plans</a></p>
+</section>
+{% endblock %}

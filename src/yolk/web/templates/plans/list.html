@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Plans · yolk{% endblock %}
+{% block content %}
+<h1>{{ viewer.person.name }}'s plans</h1>
+{% if plans %}
+<table class="plans">
+  <thead><tr><th>Plan</th><th>Profile</th><th>Day</th></tr></thead>
+  <tbody>
+  {% for plan in plans %}
+    <tr>
+      <td><a href="/plans/{{ plan.id }}">{{ plan.name }}</a></td>
+      <td>{{ plan.profile_name }}</td>
+      <td>
+        {% if plan.error %}<span class="mark error" title="{{ plan.error }}">Can't evaluate</span>
+        {% elif plan.ok %}<span class="mark pass">Within tolerance</span>
+        {% else %}<span class="mark fail">Outside tolerance</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No active plans yet.</p>
+{% endif %}
+{% endblock %}
