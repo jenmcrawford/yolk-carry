@@ -1,0 +1,29 @@
+{# Needs: evaluation (DayEvaluation). Fat and carb marks judge share of calories, not grams. #}
+{% set rows = [
+  ("Calories", "kcal", "kcal", "%.0f", "%+.0f", ""),
+  ("Protein", "protein_g", "protein_g", "%.1f", "%+.1f", " g"),
+  ("Fat", "fat_g", "fat_pct", "%.1f", "%+.1f", " g"),
+  ("Carbs", "carb_g", "carb_pct", "%.1f", "%+.1f", " g"),
+] %}
+<section class="totals" id="totals">
+  <h2>Day totals</h2>
+  <table>
+    <thead>
+      <tr><th></th><th class="num">Total</th><th class="num">Target</th><th class="num">Delta</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for label, field, check, fmt, delta_fmt, suffix in rows %}
+      <tr>
+        <th scope="row">{{ label }}</th>
+        <td class="num">{{ fmt|format(evaluation.totals|attr(field)) }}{{ suffix }}</td>
+        <td class="num">{{ fmt|format(evaluation.target|attr(field)) }}{{ suffix }}</td>
+        <td class="num">{{ delta_fmt|format(evaluation.deltas|attr(field)) }}{{ suffix }}</td>
+        <td>
+          {% if evaluation.within_tolerance[check] %}<span class="mark pass">Within</span>
+          {% else %}<span class="mark fail">Outside</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>

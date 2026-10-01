@@ -37,5 +37,18 @@ into an empty database.
 | `uv run python -m yolk migrate` | Apply pending migrations |
 | `uv run python -m yolk export [--out DIR]` | Write every table to JSON |
 | `uv run python -m yolk import [--from DIR]` | Load JSON into an empty database |
+| `uv run python -m yolk serve [--port N]` | Run the web app at http://127.0.0.1:8000 |
 
 Set `YOLK_DB` to use a database somewhere other than `yolk.db` in the repo root.
+
+## Looking at a plan
+
+```bash
+uv run python -m yolk serve
+```
+
+Open http://127.0.0.1:8000. The plan list shows each plan and whether the day lands
+within the profile's tolerances. A plan page shows the day totals against the target,
+then every slot with its foods. The app only listens on this machine and has no login.
+If the database is missing or needs a migration, the page says which command to run;
+the app never creates or migrates the database itself.

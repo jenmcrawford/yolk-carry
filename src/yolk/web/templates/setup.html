@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Setup needed · yolk{% endblock %}
+{% block content %}
+<section class="notice">
+  <h1>Setup needed</h1>
+  <p>{{ message }}</p>
+  <p>Run this from the repository, then reload:</p>
+  <pre><code>{{ command }}</code></pre>
+</section>
+{% endblock %}

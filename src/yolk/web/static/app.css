@@ -1,0 +1,79 @@
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --text: #1f1d1a;
+  --muted: #6b665e;
+  --line: #e4e0d8;
+  --accent: #c9821a;
+  --pass: #2f7a3e;
+  --fail: #b3412e;
+  --code-bg: #f1eee8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614;
+    --surface: #201f1c;
+    --text: #ece8e1;
+    --muted: #a29c92;
+    --line: #36332e;
+    --accent: #e3a443;
+    --pass: #6cc07c;
+    --fail: #ec8572;
+    --code-bg: #2a2825;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a { color: var(--accent); }
+
+header.site {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+header.site .brand { font-weight: 700; color: var(--text); text-decoration: none; }
+header.site .picker { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 1rem; }
+
+h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+tfoot td { font-weight: 600; border-bottom: none; }
+
+.slot, .totals, .notice {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.mark { font-weight: 600; white-space: nowrap; }
+.mark.pass { color: var(--pass); }
+.mark.fail, .mark.error { color: var(--fail); }
+
+.error-panel { border-color: var(--fail); }
+
+.muted { color: var(--muted); }
+
+pre { background: var(--code-bg); padding: 0.75rem; border-radius: 6px; overflow-x: auto; }

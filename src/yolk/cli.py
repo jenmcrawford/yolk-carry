@@ -1,4 +1,4 @@
-"""The `yolk` command: create, migrate, export, and import the database."""
+"""The `yolk` command: create, migrate, export, import, and serve the database."""
 
 from __future__ import annotations
 
@@ -8,12 +8,15 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import uvicorn
+
 from yolk.config import database_path
 from yolk.db.connection import connect
 from yolk.db.migrate import apply_migrations
 from yolk.errors import YolkError
 from yolk.seed import seed_keto_plan_a
 from yolk.snapshot import DEFAULT_DIR, export_database, import_database
+from yolk.web.app import create_app
 
 
 def _require_existing_database() -> Path:
@@ -86,6 +89,17 @@ def _cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+# The app has no authentication, so it must never listen beyond this machine.
+LOCALHOST = "127.0.0.1"
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    path = database_path()
+    print(f"Serving {path} at http://{LOCALHOST}:{args.port} (Ctrl+C to stop)")
+    uvicorn.run(create_app(path), host=LOCALHOST, port=args.port)
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="yolk", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -106,6 +120,10 @@ def _parser() -> argparse.ArgumentParser:
     load = sub.add_parser("import", help="load JSON into an empty database")
     load.add_argument("--from", dest="from", default=str(DEFAULT_DIR))
     load.set_defaults(func=_cmd_import)
+
+    serve = sub.add_parser("serve", help="run the web app on this machine")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(func=_cmd_serve)
 
     return parser
 

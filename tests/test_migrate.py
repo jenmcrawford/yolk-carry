@@ -9,6 +9,7 @@ from yolk.db.migrate import (
     apply_migrations,
     available,
     latest_version,
+    pending,
 )
 
 
@@ -220,4 +221,27 @@ def test_post_hoc_check_catches_a_transaction_the_preflight_check_missed(
     # rejection above is layer one, not the only layer: by the time this
     # check runs, the damage this test simulates is no longer undoable.
     assert conn.execute("SELECT count(*) AS n FROM parent").fetchone()["n"] == 0
+    conn.close()
+
+
+def test_pending_lists_every_migration_on_a_fresh_database():
+    conn = connect(":memory:")
+    assert pending(conn) == [version for version, _ in available()]
+    conn.close()
+
+
+def test_pending_is_empty_once_migrations_are_applied():
+    conn = connect(":memory:")
+    apply_migrations(conn)
+    assert pending(conn) == []
+    conn.close()
+
+
+def test_pending_does_not_create_the_version_table():
+    """pending() must be read-only; the web app calls it on every request."""
+    conn = connect(":memory:")
+    pending(conn)
+    assert conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+    ).fetchone() is None
     conn.close()

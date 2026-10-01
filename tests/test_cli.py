@@ -90,3 +90,26 @@ def test_import_with_malformed_json_fails_cleanly_instead_of_a_traceback(
     # json.JSONDecodeError propagating out of main) is the assertion here.
     assert main(["import", "--from", str(out)]) == 1
     assert capsys.readouterr().err.strip() != ""
+
+
+def test_serve_binds_to_localhost_and_uses_the_resolved_database(
+    db_path, monkeypatch, capsys
+):
+    calls = []
+    monkeypatch.setattr(
+        "yolk.cli.uvicorn.run", lambda app, **kwargs: calls.append((app, kwargs))
+    )
+    assert main(["serve", "--port", "8123"]) == 0
+    [(app, kwargs)] = calls
+    assert kwargs == {"host": "127.0.0.1", "port": 8123}
+    assert app.state.db_path == db_path
+    assert "http://127.0.0.1:8123" in capsys.readouterr().out
+
+
+def test_serve_defaults_to_port_8000(db_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "yolk.cli.uvicorn.run", lambda app, **kwargs: calls.append(kwargs)
+    )
+    main(["serve"])
+    assert calls == [{"host": "127.0.0.1", "port": 8000}]

@@ -1,0 +1,35 @@
+{# Needs: slot (SlotEvaluation), slot_names (dict[int, str]). #}
+<section class="slot" id="slot-{{ slot.slot_no }}">
+  <h2>{{ slot_names.get(slot.slot_no, "Slot " ~ slot.slot_no) }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Food</th><th class="num">Amount</th><th class="num">Grams</th>
+        <th class="num">kcal</th><th class="num">Protein</th>
+        <th class="num">Fat</th><th class="num">Carbs</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for entry in slot.entries %}
+      <tr>
+        <td>{{ entry.food_name }}</td>
+        <td class="num">{{ "%g"|format(entry.qty) }} {{ entry.unit }}</td>
+        <td class="num">{{ "%.0f"|format(entry.grams) }}</td>
+        <td class="num">{{ "%.0f"|format(entry.macros.kcal) }}</td>
+        <td class="num">{{ "%.1f"|format(entry.macros.protein_g) }}</td>
+        <td class="num">{{ "%.1f"|format(entry.macros.fat_g) }}</td>
+        <td class="num">{{ "%.1f"|format(entry.macros.carb_g) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3">Slot total</td>
+        <td class="num">{{ "%.0f"|format(slot.totals.kcal) }}</td>
+        <td class="num">{{ "%.1f"|format(slot.totals.protein_g) }}</td>
+        <td class="num">{{ "%.1f"|format(slot.totals.fat_g) }}</td>
+        <td class="num">{{ "%.1f"|format(slot.totals.carb_g) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</section>
