@@ -260,3 +260,16 @@ def test_names_ending_in_draft_are_reserved(db, keto):
         drafts.save_as_new(db, draft, name="X (draft)")
     with pytest.raises(ValueError, match="reserved"):
         drafts.start_blank_draft(db, person, profile, "Y (draft)")
+
+
+def test_an_unknown_food_is_refused_before_anything_is_written(db, keto):
+    draft = drafts.start_draft(db, keto)
+    entry = _first_entry(db, draft)
+    before = _entries(db, draft)
+    with pytest.raises(LookupError, match="999999"):
+        drafts.add_entry_to_draft(
+            db, draft, slot_no=1, food_id=999_999, qty=1, unit="g"
+        )
+    with pytest.raises(LookupError, match="999999"):
+        drafts.replace_entry_food(db, entry["id"], 999_999, qty=1, unit="g")
+    assert _entries(db, draft) == before

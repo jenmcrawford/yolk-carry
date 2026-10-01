@@ -79,6 +79,15 @@ def _slot_of_entry(conn: Connection, draft: PlanHeader, entry_id: int) -> int:
     return where.slot_no
 
 
+def _require_food(conn: Connection, food_id: int) -> None:
+    try:
+        drafts.require_food(conn, food_id)
+    except LookupError:
+        raise HTTPException(
+            status_code=404, detail=f"There is no food {food_id}."
+        ) from None
+
+
 def _after_edit(
     request: Request,
     conn: Connection,
@@ -120,6 +129,7 @@ def add_food(
     food_id: Annotated[int, Form()],
 ):
     draft = owned_plan(conn, viewer, draft_id, status="draft")
+    _require_food(conn, food_id)
     qty, unit = default_portion(conn, food_id)
     drafts.add_entry_to_draft(
         conn, draft.id, slot_no=slot_no, food_id=food_id, qty=qty, unit=unit
@@ -157,6 +167,7 @@ def swap_food(
 ):
     draft = owned_plan(conn, viewer, draft_id, status="draft")
     slot_no = _slot_of_entry(conn, draft, entry_id)
+    _require_food(conn, food_id)
     qty, unit = default_portion(conn, food_id)
     drafts.replace_entry_food(conn, entry_id, food_id, qty=qty, unit=unit)
     return _after_edit(request, conn, viewer, draft, slot_no)

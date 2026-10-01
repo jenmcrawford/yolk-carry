@@ -152,3 +152,16 @@ def test_htmx_is_served_from_the_app_itself(client):
     script = client.get("/static/htmx.min.js")
     assert script.status_code == 200
     assert "htmx" in script.text[:2000]
+
+
+def test_adding_or_swapping_an_unknown_food_is_not_found(client, seeded):
+    path, draft, entry = _draft_and_first_entry(client, seeded)
+    before = _entry(path, entry["id"])
+    for url, data in (
+        (f"/drafts/{draft}/entries", {"slot_no": "1", "food_id": "999999"}),
+        (f"/drafts/{draft}/entries/{entry['id']}/swap", {"food_id": "999999"}),
+    ):
+        response = client.post(url, data=data, headers=HTMX)
+        assert response.status_code == 404
+        assert response.headers["content-type"].startswith("text/html")
+    assert _entry(path, entry["id"]) == before

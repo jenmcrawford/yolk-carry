@@ -117,6 +117,12 @@ def _free_name(
     return cleaned
 
 
+def require_food(conn: Connection, food_id: int) -> None:
+    """Raise LookupError unless the food exists."""
+    if conn.execute("SELECT id FROM foods WHERE id = ?", (food_id,)).fetchone() is None:
+        raise LookupError(f"No food with id {food_id}")
+
+
 def _copy_entries(conn: Connection, from_plan: int, to_plan: int) -> None:
     conn.execute(
         "INSERT INTO day_plan_entries (day_plan_id, slot_no, food_id, qty, unit, "
@@ -196,6 +202,7 @@ def add_entry_to_draft(
     """Add a food at the end of a slot."""
     _require_positive(qty)
     _draft(conn, draft_id)
+    require_food(conn, food_id)
     with _unit_of_work(conn):
         entry_id = conn.execute(
             "INSERT INTO day_plan_entries (day_plan_id, slot_no, food_id, qty, unit, "
@@ -224,6 +231,7 @@ def replace_entry_food(
     """Swap the food on an entry, keeping its slot and position."""
     _require_positive(qty)
     _draft(conn, locate_entry(conn, entry_id).plan_id)
+    require_food(conn, food_id)
     with _unit_of_work(conn):
         conn.execute(
             "UPDATE day_plan_entries SET food_id = ?, qty = ?, unit = ? WHERE id = ?",
