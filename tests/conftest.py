@@ -41,4 +41,4 @@ def seeded(tmp_path):
 
 @pytest.fixture
 def client(seeded):
-    return TestClient(create_app(seeded[0]))
+    return TestClient(create_app(seeded[0]), base_url="http://127.0.0.1")

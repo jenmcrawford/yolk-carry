@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yolk.config import database_path
 from yolk.web.deps import SetupRequired
@@ -20,10 +21,14 @@ from yolk.web.templating import templates
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Only this machine: refuses other Host headers, which stops DNS rebinding.
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+
 
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="yolk", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.db_path = db_path if db_path is not None else database_path()
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(plans.router)
