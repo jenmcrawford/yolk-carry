@@ -1,4 +1,9 @@
-{# Needs: foods (list[FoodSummary]), query (str). #}
+{# Needs: foods (list[FoodSummary]), query (str).
+   Optional: pick, which adds a button to every row: {"action": URL to post to,
+   "label": button text, "fields": extra hidden fields, "target": CSS selector
+   for htmx to swap, or None for a plain post}. Each button posts food_id plus
+   the fields. This partial knows nothing about what the action does. #}
+
 {% if foods %}
 <section class="results">
   <table>
@@ -8,6 +13,7 @@
         <th class="num">kcal</th><th class="num">Protein</th>
         <th class="num">Fat</th><th class="num">Carbs</th>
         <th>Units</th>
+        {% if pick %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -27,6 +33,15 @@
         <td colspan="4" class="muted">not computed</td>
         {% endif %}
         <td>{% for unit, grams in food.units %}{{ unit }} = {{ "%g"|format(grams) }} g{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        {% if pick %}
+        <td class="actions">
+          <form method="post" action="{{ pick.action }}"{% if pick.target %} hx-post="{{ pick.action }}" hx-target="{{ pick.target }}" hx-swap="outerHTML"{% endif %}>
+            {% for name, value in pick.fields.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+            <input type="hidden" name="food_id" value="{{ food.id }}">
+            <button type="submit">{{ pick.label }}</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>

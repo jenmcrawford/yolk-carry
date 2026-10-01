@@ -159,3 +159,11 @@ input, select {
 .draft-actions form, .save-as { display: flex; gap: 0.5rem; align-items: center; }
 .new-plan-form label, .save-as label { display: flex; gap: 0.4rem; align-items: center; }
 .plan-actions { margin-bottom: 1rem; }
+
+form.amount { display: flex; gap: 0.3rem; justify-content: flex-end; }
+form.amount input { width: 4.5rem; text-align: right; }
+td.actions { white-space: nowrap; }
+td.actions form { display: inline; }
+.slot-actions { margin: 0.75rem 0 0; }
+.picker:not(:empty) { margin-top: 0.75rem; }
+.slot .results { border: 0; padding: 0; margin: 0; background: transparent; }

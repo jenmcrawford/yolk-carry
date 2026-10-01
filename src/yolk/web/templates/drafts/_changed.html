@@ -1,0 +1,4 @@
+{# The htmx answer to one edit: the changed slot, and the day totals swapped
+   out of band. Needs the draft_context plus ps (the changed PlanSlot). #}
+{% include "plans/_slot.html" %}
+{% with oob = true %}{% include "plans/_totals.html" %}{% endwith %}

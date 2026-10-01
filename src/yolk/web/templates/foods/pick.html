@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Choose a food · yolk{% endblock %}
+{% block content %}
+<h1>Choose a food</h1>
+<p><a href="/drafts/{{ draft.id }}">Back to {{ draft.name }}</a></p>
+<div class="picker" id="picker-{{ slot }}">
+{% include "foods/_picker.html" %}
+</div>
+{% endblock %}
