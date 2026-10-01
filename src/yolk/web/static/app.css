@@ -56,7 +56,7 @@ h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); text-align: left; }
 th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 tfoot td { font-weight: 600; border-bottom: none; }
 
 .slot, .totals, .notice {
