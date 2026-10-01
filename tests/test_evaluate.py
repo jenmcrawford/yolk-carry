@@ -1,5 +1,6 @@
 import pytest
 
+from yolk.errors import UnknownUnitError
 from yolk.foods import create_item
 from yolk.macros import Macros
 from yolk.people import create_person, create_profile
@@ -162,3 +163,47 @@ def test_evaluate_uses_display_units(db):
     # 1.5 tbsp = 20.25 g -> 179.01 kcal
     assert result.totals.kcal == pytest.approx(179.01, abs=0.01)
     assert result.slots[0].entries[0].grams == pytest.approx(20.25, abs=0.001)
+
+
+def _bad_entry(db, plan_id, unit="handful"):
+    food_id = db.execute(
+        "SELECT food_id FROM day_plan_entries WHERE day_plan_id = ? ORDER BY id",
+        (plan_id,),
+    ).fetchone()["food_id"]
+    return add_entry(db, plan_id, slot_no=4, food_id=food_id, qty=1, unit=unit)
+
+
+def test_partial_evaluation_flags_only_the_bad_entry_and_leaves_it_out(db, simple_plan):
+    clean = evaluate(db, simple_plan)
+    bad_id = _bad_entry(db, simple_plan)
+    result = evaluate(db, simple_plan, partial=True)
+    [bad] = [e for s in result.slots for e in s.entries if e.error]
+    assert bad.entry_id == bad_id
+    assert "handful" in bad.error
+    assert (bad.grams, bad.macros) == (None, None)
+    assert result.totals == clean.totals
+    assert result.excluded == 1
+    assert not result.ok
+
+
+def test_default_evaluation_still_raises_on_a_bad_entry(db, simple_plan):
+    _bad_entry(db, simple_plan)
+    with pytest.raises(UnknownUnitError, match="handful"):
+        evaluate(db, simple_plan)
+
+
+def test_partial_evaluation_of_a_clean_plan_matches_the_default(db, simple_plan):
+    assert evaluate(db, simple_plan, partial=True) == evaluate(db, simple_plan)
+
+
+def test_a_recipe_without_macros_is_excluded_not_raised(db, simple_plan):
+    recipe = db.execute(
+        "INSERT INTO foods (kind, name, role, source) "
+        "VALUES ('recipe', 'Chili', 'protein', 'computed') RETURNING id"
+    ).fetchone()["id"]
+    db.commit()
+    add_entry(db, simple_plan, slot_no=6, food_id=recipe, qty=300, unit="g")
+    result = evaluate(db, simple_plan, partial=True)
+    assert result.excluded == 1
+    [bad] = [e for s in result.slots for e in s.entries if e.error]
+    assert "Chili" in bad.error
