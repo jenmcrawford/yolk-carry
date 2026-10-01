@@ -61,3 +61,29 @@ def test_an_unknown_plan_is_a_404(client):
     response = client.get("/plans/999")
     assert response.status_code == 404
     assert "There is no plan 999" in response.text
+
+
+def _row(html, label):
+    start = html.index(f'<th scope="row">{label}</th>')
+    return html[html.rindex("<tr>", 0, start) : html.index("</tr>", start)]
+
+
+def test_only_the_macro_that_misses_tolerance_says_outside(client, seeded):
+    path, plan_id, _ = seeded
+    conn = connect(path)
+    conn.execute(
+        "UPDATE macro_profiles SET macro_pct_tol = 0.5 "
+        "WHERE id = (SELECT profile_id FROM day_plans WHERE id = ?)",
+        (plan_id,),
+    )
+    conn.commit()
+    result = evaluate(conn, plan_id)
+    conn.close()
+    assert result.within_tolerance["fat_pct"] is False
+    assert result.within_tolerance["carb_pct"] is True
+
+    html = client.get(f"/plans/{plan_id}").text
+    assert "Outside" in _row(html, "Fat")
+    for label in ("Calories", "Protein", "Carbs"):
+        assert "Within" in _row(html, label)
+    assert html.count("Outside") == 1
