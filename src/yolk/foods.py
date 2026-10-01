@@ -8,6 +8,7 @@ as a component of a recipe or an entry in a plan.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 from yolk.db import Connection
@@ -125,6 +126,72 @@ def portion_macros(
     """Macros for a given quantity of a food, in any unit it knows."""
     grams = to_grams(conn, food_id, qty, unit)
     return macros_per_100g(conn, food_id).scale(grams / 100.0)
+
+
+@dataclass(frozen=True)
+class FoodSummary:
+    id: int
+    name: str
+    brand: str
+    kind: str
+    role: str
+    verified: bool
+    # None exactly when a recipe's macros were never computed.
+    per_100g: Macros | None
+    units: list[tuple[str, float]]
+
+
+def _like_pattern(query: str) -> str:
+    """A LIKE pattern matching `query` anywhere, with its wildcards taken literally."""
+    escaped = (
+        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
+
+def search_library(conn: Connection, query: str) -> list[FoodSummary]:
+    """Foods whose name or brand contains `query`, ignoring case.
+
+    An empty query lists every food. Unlike macros_per_100g, a recipe whose
+    macros were never computed is returned with per_100g=None rather than
+    raising, so one unfinished recipe cannot break the whole list.
+    """
+    pattern = _like_pattern(query.strip().lower())
+    rows = conn.execute(
+        "SELECT id, name, brand, kind, role, verified, kcal_100g, "
+        "protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g FROM foods "
+        "WHERE lower(name) LIKE ? ESCAPE '\\' OR lower(brand) LIKE ? ESCAPE '\\' "
+        "ORDER BY lower(name), lower(brand), id",
+        (pattern, pattern),
+    ).fetchall()
+
+    units: dict[int, list[tuple[str, float]]] = {}
+    for row in conn.execute(
+        "SELECT food_id, unit, grams FROM food_units ORDER BY food_id, unit"
+    ):
+        units.setdefault(row["food_id"], []).append((row["unit"], row["grams"]))
+
+    return [
+        FoodSummary(
+            id=row["id"],
+            name=row["name"],
+            brand=row["brand"],
+            kind=row["kind"],
+            role=row["role"],
+            verified=bool(row["verified"]),
+            per_100g=None
+            if row["kcal_100g"] is None
+            else Macros(
+                kcal=row["kcal_100g"],
+                protein_g=row["protein_g_100g"] or 0.0,
+                fat_g=row["fat_g_100g"] or 0.0,
+                carb_g=row["carb_g_100g"] or 0.0,
+                fiber_g=row["fiber_g_100g"] or 0.0,
+            ),
+            units=units.get(row["id"], []),
+        )
+        for row in rows
+    ]
 
 
 def create_recipe(
