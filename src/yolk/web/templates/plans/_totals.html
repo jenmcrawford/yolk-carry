@@ -7,6 +7,9 @@
 ] %}
 <section class="totals" id="totals">
   <h2>Day totals</h2>
+  {% if evaluation.excluded %}
+  <p class="entry-error">Incomplete: {{ evaluation.excluded }} {{ "entry" if evaluation.excluded == 1 else "entries" }} excluded, so these totals are too low.</p>
+  {% endif %}
   <table>
     <thead>
       <tr><th></th><th class="num">Total</th><th class="num">Target</th><th class="num">Delta</th><th></th></tr>

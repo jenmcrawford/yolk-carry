@@ -1,4 +1,6 @@
 from yolk.db.connection import connect
+from yolk.people import create_slot
+from yolk.planning import drafts
 from yolk.planning.evaluate import add_entry, evaluate
 
 
@@ -87,3 +89,39 @@ def test_only_the_macro_that_misses_tolerance_says_outside(client, seeded):
     for label in ("Calories", "Protein", "Carbs"):
         assert "Within" in _row(html, label)
     assert html.count("Outside") == 1
+
+
+def test_an_unknown_unit_shows_on_its_own_row_and_the_rest_still_renders(client, seeded):
+    path, plan_id, spec = seeded
+    _add_entry_to_seeded_plan(path, plan_id, slot_no=1, unit="handful")
+    text = client.get(f"/plans/{plan_id}").text
+    assert "handful" in text
+    assert spec["slots"][1]["entries"][0]["food"] in text
+    assert "Day totals" in text
+    assert "Incomplete: 1 entry excluded" in text
+
+
+def test_an_empty_slot_template_shows_as_nothing_planned(client, seeded):
+    path, plan_id, _ = seeded
+    conn = connect(path)
+    plan = conn.execute(
+        "SELECT person_id, profile_id FROM day_plans WHERE id = ?", (plan_id,)
+    ).fetchone()
+    create_slot(
+        conn, plan["person_id"], plan["profile_id"],
+        slot_no=7, name="Late snack", time_of_day="21:00",
+    )
+    conn.close()
+    text = client.get(f"/plans/{plan_id}").text
+    assert "Late snack" in text
+    assert "Nothing planned for this meal." in text
+
+
+def test_a_draft_opened_as_a_plan_redirects_to_the_draft(client, seeded):
+    path, plan_id, _ = seeded
+    conn = connect(path)
+    draft = drafts.start_draft(conn, plan_id)
+    conn.close()
+    response = client.get(f"/plans/{draft}", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/drafts/{draft}"

@@ -123,3 +123,6 @@ form.search input {
   padding: 0;
   border: 0;
 }
+
+.entry-error { color: var(--fail); }
+tr.has-error td:first-child { box-shadow: inset 3px 0 0 var(--fail); }
