@@ -93,17 +93,25 @@ def locate_entry(conn: Connection, entry_id: int) -> EntryLocation:
     return EntryLocation(plan_id=row["day_plan_id"], slot_no=row["slot_no"])
 
 
+def _name_row(conn: Connection, person_id: int, name: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT id FROM day_plans WHERE person_id = ? AND name = ?",
+        (person_id, name),
+    ).fetchone()
+
+
 def _free_name(
     conn: Connection, person_id: int, name: str, *, ignore_id: int | None = None
 ) -> str:
-    """The name, stripped, once it is known to be non-empty and unused."""
+    """The name, stripped, once it is known to be non-empty, unreserved and unused."""
     cleaned = name.strip()
     if not cleaned:
         raise ValueError("A plan needs a name.")
-    row = conn.execute(
-        "SELECT id FROM day_plans WHERE person_id = ? AND name = ?",
-        (person_id, cleaned),
-    ).fetchone()
+    if cleaned.endswith(DRAFT_SUFFIX):
+        raise ValueError(
+            "Plan names ending in “ (draft)” are reserved for drafts."
+        )
+    row = _name_row(conn, person_id, cleaned)
     if row is not None and row["id"] != ignore_id:
         raise DuplicatePlanNameError(f"You already have a plan called {cleaned!r}.")
     return cleaned
@@ -140,7 +148,11 @@ def start_draft(conn: Connection, plan_id: int) -> int:
     ).fetchone()
     if existing is not None:
         return existing["id"]
-    name = _free_name(conn, plan["person_id"], plan["name"] + DRAFT_SUFFIX)
+    name = plan["name"] + DRAFT_SUFFIX
+    number = 2
+    while _name_row(conn, plan["person_id"], name) is not None:
+        name = f"{plan['name']} (draft {number})"
+        number += 1
     with _unit_of_work(conn):
         draft_id = conn.execute(
             "INSERT INTO day_plans (person_id, profile_id, name, status, "

@@ -239,3 +239,24 @@ def test_a_blank_draft_refuses_another_persons_profile(db, keto):
     sam = create_person(db, "Sam")
     with pytest.raises(LookupError):
         drafts.start_blank_draft(db, sam, profile, "Sam plan")
+
+
+def test_a_saved_plan_named_like_a_draft_does_not_block_a_new_draft(db, keto):
+    person, profile = _person_and_profile(db, keto)
+    db.execute(
+        "INSERT INTO day_plans (person_id, profile_id, name, status, created_at) "
+        "VALUES (?, ?, 'Keto Meal Plan A (draft)', 'active', 'now')",
+        (person, profile),
+    )
+    db.commit()
+    draft = drafts.start_draft(db, keto)
+    assert _plan(db, draft)["name"] == "Keto Meal Plan A (draft 2)"
+
+
+def test_names_ending_in_draft_are_reserved(db, keto):
+    person, profile = _person_and_profile(db, keto)
+    draft = drafts.start_draft(db, keto)
+    with pytest.raises(ValueError, match="reserved"):
+        drafts.save_as_new(db, draft, name="X (draft)")
+    with pytest.raises(ValueError, match="reserved"):
+        drafts.start_blank_draft(db, person, profile, "Y (draft)")
