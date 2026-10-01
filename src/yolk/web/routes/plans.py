@@ -8,8 +8,8 @@ from fastapi.responses import HTMLResponse
 from yolk.errors import YolkError
 from yolk.people import slot_names
 from yolk.planning.evaluate import evaluate
-from yolk.planning.plans import get_plan, plan_summaries
-from yolk.web.deps import ConnDep, ViewerDep
+from yolk.planning.plans import plan_summaries
+from yolk.web.deps import ConnDep, ViewerDep, owned_plan
 from yolk.web.templating import templates
 
 router = APIRouter()
@@ -26,15 +26,7 @@ def plan_list(request: Request, conn: ConnDep, viewer: ViewerDep):
 
 @router.get("/plans/{plan_id}", response_class=HTMLResponse)
 def plan_detail(plan_id: int, request: Request, conn: ConnDep, viewer: ViewerDep):
-    try:
-        plan = get_plan(conn, plan_id)
-    except LookupError:
-        return templates.TemplateResponse(
-            request,
-            "error.html",
-            {"viewer": viewer, "message": f"There is no plan {plan_id}."},
-            status_code=404,
-        )
+    plan = owned_plan(conn, viewer, plan_id)
     try:
         evaluation, error = evaluate(conn, plan_id), None
     except YolkError as exc:

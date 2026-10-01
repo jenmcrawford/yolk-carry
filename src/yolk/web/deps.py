@@ -10,12 +10,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 
 from yolk.db import Connection
 from yolk.db.connection import connect
 from yolk.db.migrate import pending
 from yolk.people import Person, list_people
+from yolk.planning.plans import PlanHeader, get_plan
 
 PERSON_COOKIE = "yolk_person"
 
@@ -81,3 +82,29 @@ def get_viewer(request: Request, conn: ConnDep) -> Viewer:
 
 
 ViewerDep = Annotated[Viewer, Depends(get_viewer)]
+
+
+def owned_plan(
+    conn: Connection, viewer: Viewer, plan_id: int, *, status: str | None = None
+) -> PlanHeader:
+    """The plan, if it exists, is the viewer's, and has `status` when given.
+
+    Anything else is a 404, so one person's address can never open another
+    person's plan.
+    """
+    try:
+        plan = get_plan(conn, plan_id)
+    except LookupError:
+        plan = None
+    if (
+        plan is None
+        or plan.person_id != viewer.person.id
+        or (status is not None and plan.status != status)
+    ):
+        raise HTTPException(status_code=404, detail=f"There is no plan {plan_id}.")
+    return plan
+
+
+def is_htmx(request: Request) -> bool:
+    """Whether htmx sent this request, and so wants a fragment back."""
+    return request.headers.get("hx-request") == "true"
