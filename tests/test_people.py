@@ -1,8 +1,8 @@
 import pytest
 
 from yolk.people import (
-    active_profile, create_person, create_profile, create_slot, targets_for_profile,
-    list_people, slot_names,
+    active_profile, create_person, create_profile, create_slot, current_profiles,
+    targets_for_profile, list_people, slot_names,
 )
 
 
@@ -137,3 +137,19 @@ def test_slot_names_maps_slot_numbers_for_one_profile(db):
     create_slot(db, pid, training, slot_no=6, name="Dinner", time_of_day="18:00")
     create_slot(db, pid, rest, slot_no=1, name="Rest breakfast", time_of_day="08:00")
     assert slot_names(db, training) == {1: "Wake Up", 6: "Dinner"}
+
+
+def test_current_profiles_lists_each_profile_as_it_stands_on_a_date(db):
+    pid = create_person(db, "Jen")
+    for name, effective_on, kcal in [
+        ("training", "2026-01-01", 2000),
+        ("training", "2026-07-14", 2150),
+        ("training", "2026-12-01", 2300),
+        ("rest", "2026-07-14", 2115),
+    ]:
+        create_profile(
+            db, pid, name=name, effective_on=effective_on, kcal=kcal,
+            fat_pct=34, carb_pct=28, protein_pct=38,
+        )
+    choices = current_profiles(db, pid, "2026-08-09")
+    assert [(c.name, c.kcal) for c in choices] == [("rest", 2115), ("training", 2150)]

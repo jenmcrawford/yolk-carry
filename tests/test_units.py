@@ -1,7 +1,9 @@
 import pytest
 
 from yolk.errors import UnknownUnitError
-from yolk.units import to_grams
+from yolk.foods import add_unit, create_item
+from yolk.macros import Macros
+from yolk.units import default_portion, to_grams, units_for
 
 
 @pytest.fixture
@@ -63,3 +65,27 @@ def test_round_trip_grams_to_unit_and_back(db, olive_oil):
 
     grams = to_grams(db, olive_oil, 3, "tbsp")
     assert from_grams(db, olive_oil, grams, "tbsp") == pytest.approx(3.0)
+
+
+SOME = Macros(kcal=100, protein_g=10, fat_g=5, carb_g=2)
+
+
+def test_units_for_lists_the_foods_own_units_then_mass_units(db):
+    food = create_item(
+        db, name="Karbolyn", role="carb", macros=SOME, units={"scoop": 50.0, "cup": 120.0}
+    )
+    assert units_for(db, food) == ["cup", "scoop", "g", "oz", "lb", "kg"]
+
+
+def test_the_default_display_unit_comes_first(db):
+    food = create_item(db, name="Whey", role="protein", macros=SOME, units={"cup": 120.0})
+    add_unit(db, food, "scoop", 50.0, is_default_display=True)
+    assert units_for(db, food)[0] == "scoop"
+    assert default_portion(db, food) == (1.0, "scoop")
+
+
+def test_default_portion_falls_back_to_100_grams(db):
+    with_units = create_item(db, name="Rice", role="carb", macros=SOME, units={"cup": 158.0})
+    bare = create_item(db, name="Chicken", role="protein", macros=SOME)
+    assert default_portion(db, with_units) == (1.0, "cup")
+    assert default_portion(db, bare) == (100.0, "g")

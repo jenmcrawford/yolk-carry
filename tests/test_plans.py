@@ -1,8 +1,12 @@
 import pytest
 
+from yolk.macros import Macros
 from yolk.people import create_person, create_profile
-from yolk.planning.evaluate import add_entry, create_day_plan
-from yolk.planning.plans import get_plan, plan_summaries
+from yolk.planning import drafts
+from yolk.planning.evaluate import DayEvaluation, add_entry, create_day_plan, evaluate
+from yolk.planning.plans import (
+    compare, draft_summaries, entry_units, get_plan, plan_slots, plan_summaries,
+)
 from yolk.seed import seed_keto_plan_a
 
 
@@ -72,3 +76,62 @@ def test_a_plan_that_cannot_be_evaluated_is_listed_with_its_error(db):
     [summary] = plan_summaries(db, person_id)
     assert summary.ok is None
     assert "handful" in summary.error
+
+
+def test_a_blank_draft_shows_every_slot_template_empty(db):
+    plan_id, spec = seed_keto_plan_a(db)
+    header = get_plan(db, plan_id)
+    blank = drafts.start_blank_draft(db, header.person_id, header.profile_id, "Rest day")
+    slots = plan_slots(db, blank, evaluate(db, blank, partial=True))
+    assert [(s.slot_no, s.name) for s in slots] == [
+        (s["slot_no"], s["name"]) for s in spec["slots"]
+    ]
+    assert all(s.slot is None for s in slots)
+
+
+def test_a_slot_with_entries_but_no_template_is_named_by_number(db):
+    plan_id, _ = seed_keto_plan_a(db)
+    add_entry(db, plan_id, slot_no=7, food_id=_first_food_id(db, plan_id), qty=10, unit="g")
+    slots = plan_slots(db, plan_id, evaluate(db, plan_id))
+    assert (slots[-1].slot_no, slots[-1].name) == (7, "Slot 7")
+    assert slots[-1].slot is not None
+
+
+def test_compare_subtracts_the_saved_totals_from_the_drafts():
+    def day(totals):
+        return DayEvaluation(
+            day_plan_id=1, plan_name="p", totals=totals, target=Macros(),
+            deltas=Macros(), within_tolerance={},
+        )
+
+    diff = compare(
+        day(Macros(kcal=2300, protein_g=190, fat_g=90, carb_g=160)),
+        day(Macros(kcal=2150, protein_g=200, fat_g=80, carb_g=160)),
+    )
+    assert diff == Macros(kcal=150, protein_g=-10, fat_g=10, carb_g=0)
+
+
+def test_drafts_are_listed_apart_from_saved_plans(db):
+    plan_id, _ = seed_keto_plan_a(db)
+    person = get_plan(db, plan_id).person_id
+    draft = drafts.start_draft(db, plan_id)
+    assert [s.id for s in plan_summaries(db, person)] == [plan_id]
+    assert [s.id for s in draft_summaries(db, person)] == [draft]
+
+
+def test_get_plan_reports_a_drafts_parent(db):
+    plan_id, _ = seed_keto_plan_a(db)
+    draft = drafts.start_draft(db, plan_id)
+    assert get_plan(db, draft).parent_plan_id == plan_id
+    assert get_plan(db, plan_id).parent_plan_id is None
+
+
+def test_entry_units_covers_every_food_in_the_plan(db):
+    plan_id, _ = seed_keto_plan_a(db)
+    evaluation = evaluate(db, plan_id)
+    units = entry_units(db, evaluation)
+    assert set(units) == {e.food_id for s in evaluation.slots for e in s.entries}
+    coffee = db.execute(
+        "SELECT id FROM foods WHERE name = 'Buff Chick Coffee'"
+    ).fetchone()["id"]
+    assert units[coffee][0] == "packet"
