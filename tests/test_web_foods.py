@@ -77,3 +77,10 @@ def test_the_egg_shows_on_the_setup_page_too(tmp_path):
     response = client.get("/plans")
     assert response.status_code == 503
     assert '<svg class="egg"' in response.text
+
+
+def test_a_hostile_query_is_escaped_where_it_is_echoed(client):
+    response = client.get("/foods", params={"q": '"><script>alert(1)</script>'})
+    assert response.status_code == 200
+    assert "<script>alert(1)</script>" not in response.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
