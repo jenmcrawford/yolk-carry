@@ -2,6 +2,18 @@
 {% block title %}Plans · yolk{% endblock %}
 {% block content %}
 <h1>{{ viewer.person.name }}'s plans</h1>
+{% if drafts %}
+<h2>In progress</h2>
+<table class="plans">
+  <thead><tr><th>Draft</th><th>Profile</th></tr></thead>
+  <tbody>
+  {% for d in drafts %}
+    <tr><td><a href="/drafts/{{ d.id }}">{{ d.name }}</a></td><td>{{ d.profile_name }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>Saved</h2>
+{% endif %}
 {% if plans %}
 <table class="plans">
   <thead><tr><th>Plan</th><th>Profile</th><th>Day</th></tr></thead>
@@ -22,4 +34,21 @@
 {% else %}
 <p>No active plans yet.</p>
 {% endif %}
+<section class="notice new-plan">
+  <h2>New plan</h2>
+  {% if form_error %}<p class="entry-error">{{ form_error }}</p>{% endif %}
+  {% if profiles %}
+  <form class="new-plan-form" method="post" action="/plans">
+    <label>Name <input name="name" required value="{{ form_name or '' }}"></label>
+    <label>Profile
+      <select name="profile_id">
+        {% for p in profiles %}<option value="{{ p.id }}">{{ p.name }} · {{ "%.0f"|format(p.kcal) }} kcal</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Start</button>
+  </form>
+  {% else %}
+  <p class="muted">A plan is measured against a macro profile, and there isn't one yet.</p>
+  {% endif %}
+</section>
 {% endblock %}

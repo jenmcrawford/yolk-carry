@@ -3,6 +3,9 @@
 {% block content %}
 <h1>{{ plan.name }}</h1>
 <p class="muted">Profile: {{ plan.profile_name }}</p>
+<form class="plan-actions" method="post" action="/plans/{{ plan.id }}/draft">
+  <button type="submit">Edit or copy</button>
+</form>
 {% include "plans/_totals.html" %}
 {% for ps in slots %}
 {% include "plans/_slot.html" %}

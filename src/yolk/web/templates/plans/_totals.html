@@ -1,4 +1,4 @@
-{# Needs: evaluation (DayEvaluation). Fat and carb marks judge share of calories, not grams. #}
+{# Needs: evaluation (DayEvaluation). Optional: vs (Macros, draft minus saved plan). Fat and carb marks judge share of calories, not grams. #}
 {% set rows = [
   ("Calories", "kcal", "kcal", "%.0f", "%+.0f", ""),
   ("Protein", "protein_g", "protein_g", "%.1f", "%+.1f", " g"),
@@ -12,7 +12,7 @@
   {% endif %}
   <table>
     <thead>
-      <tr><th></th><th class="num">Total</th><th class="num">Target</th><th class="num">Delta</th><th></th></tr>
+      <tr><th></th><th class="num">Total</th><th class="num">Target</th><th class="num">Delta</th>{% if vs %}<th class="num">vs saved</th>{% endif %}<th></th></tr>
     </thead>
     <tbody>
     {% for label, field, check, fmt, delta_fmt, suffix in rows %}
@@ -21,6 +21,7 @@
         <td class="num">{{ fmt|format(evaluation.totals|attr(field)) }}{{ suffix }}</td>
         <td class="num">{{ fmt|format(evaluation.target|attr(field)) }}{{ suffix }}</td>
         <td class="num">{{ delta_fmt|format(evaluation.deltas|attr(field)) }}{{ suffix }}</td>
+        {% if vs %}<td class="num">{{ delta_fmt|format(vs|attr(field)) }}{{ suffix }}</td>{% endif %}
         <td>
           {% if evaluation.within_tolerance[check] %}<span class="mark pass">Within</span>
           {% else %}<span class="mark fail">Outside</span>{% endif %}

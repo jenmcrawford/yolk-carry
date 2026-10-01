@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ draft.name }} · yolk{% endblock %}
+{% block content %}
+<h1>{{ draft.name }}</h1>
+<p class="muted">Draft · Profile: {{ draft.profile_name }}{% if parent %} · from <a href="/plans/{{ parent.id }}">{{ parent.name }}</a>{% endif %}</p>
+{% if form_error %}<p class="notice error-panel">{{ form_error }}</p>{% endif %}
+<div class="draft-actions">
+  {% if parent %}
+  <form method="post" action="/drafts/{{ draft.id }}/save-over"
+        data-confirm="Replace “{{ parent.name }}” with this draft?"
+        onsubmit="return confirm(this.dataset.confirm)">
+    <button type="submit">Save over “{{ parent.name }}”</button>
+  </form>
+  {% endif %}
+  <form class="save-as" method="post" action="/drafts/{{ draft.id }}/save-as-new">
+    <label>Name <input name="name" required value="{{ '' if parent else draft.name }}"></label>
+    <button type="submit">Save as new</button>
+  </form>
+  <form method="post" action="/drafts/{{ draft.id }}/discard"
+        data-confirm="Discard this draft? Its changes will be lost."
+        onsubmit="return confirm(this.dataset.confirm)">
+    <button type="submit">Discard</button>
+  </form>
+</div>
+{% include "plans/_totals.html" %}
+{% for ps in slots %}
+{% include "plans/_slot.html" %}
+{% endfor %}
+{% endblock %}

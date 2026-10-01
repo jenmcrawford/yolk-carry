@@ -126,3 +126,36 @@ form.search input {
 
 .entry-error { color: var(--fail); }
 tr.has-error td:first-child { box-shadow: inset 3px 0 0 var(--fail); }
+
+button, .button {
+  display: inline-block;
+  font: inherit;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+}
+button:hover, .button:hover { border-color: var(--accent); }
+
+input, select {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+.draft-actions, .new-plan-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+.draft-actions form, .save-as { display: flex; gap: 0.5rem; align-items: center; }
+.new-plan-form label, .save-as label { display: flex; gap: 0.4rem; align-items: center; }
+.plan-actions { margin-bottom: 1rem; }
