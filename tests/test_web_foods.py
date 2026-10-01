@@ -59,3 +59,21 @@ def test_a_recipe_without_macros_says_not_computed(client, seeded):
     conn.close()
     response = client.get("/foods", params={"q": "chili"})
     assert "not computed" in response.text
+
+
+def test_the_header_shows_the_egg_beside_yolk(client):
+    text = client.get("/plans").text
+    assert '<svg class="egg"' in text
+    assert 'aria-hidden="true"' in text
+    assert "</svg>yolk</a>" in text
+
+
+def test_the_egg_shows_on_the_setup_page_too(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from yolk.web.app import create_app
+
+    client = TestClient(create_app(tmp_path / "absent.db"), base_url="http://127.0.0.1")
+    response = client.get("/plans")
+    assert response.status_code == 503
+    assert '<svg class="egg"' in response.text

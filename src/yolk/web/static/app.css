@@ -45,7 +45,15 @@ header.site {
   background: var(--surface);
 }
 
-header.site .brand { font-weight: 700; color: var(--text); text-decoration: none; }
+header.site .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+header.site .egg { flex: none; display: block; }
 header.site .picker { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
 
 main { max-width: 60rem; margin: 0 auto; padding: 1rem; }
