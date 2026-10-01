@@ -235,3 +235,13 @@ def test_pending_is_empty_once_migrations_are_applied():
     apply_migrations(conn)
     assert pending(conn) == []
     conn.close()
+
+
+def test_pending_does_not_create_the_version_table():
+    """pending() must be read-only; the web app calls it on every request."""
+    conn = connect(":memory:")
+    pending(conn)
+    assert conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+    ).fetchone() is None
+    conn.close()

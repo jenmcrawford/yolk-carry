@@ -16,6 +16,7 @@ all-or-nothing guarantee.
 from __future__ import annotations
 
 import re
+import sqlite3
 from datetime import date
 from pathlib import Path
 
@@ -74,8 +75,19 @@ def applied(conn: Connection) -> set[int]:
 
 
 def pending(conn: Connection, directory: Path = MIGRATIONS_DIR) -> list[int]:
-    """Versions on disk that this database has not applied yet, in order."""
-    done = applied(conn)
+    """Versions on disk that this database has not applied yet, in order.
+
+    Read-only, unlike applied(): the web app calls this on every request and
+    must never write to the database. If the schema_version table does not
+    exist, all migrations are pending.
+    """
+    try:
+        done = {row["version"] for row in conn.execute("SELECT version FROM schema_version")}
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            done = set()
+        else:
+            raise
     return [version for version, _ in available(directory) if version not in done]
 
 
