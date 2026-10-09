@@ -23,3 +23,11 @@ class RecipeCycleError(YolkError):
 
 class SourceRequestError(YolkError):
     """A request to an external nutrition source (USDA, Open Food Facts, ...) failed."""
+
+
+class NotADraftError(YolkError):
+    """A saved plan's entries were edited. Only a draft's entries change."""
+
+
+class DuplicatePlanNameError(YolkError):
+    """This person already has a plan with that name."""

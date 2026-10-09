@@ -52,3 +52,18 @@ within the profile's tolerances. A plan page shows the day totals against the ta
 then every slot with its foods. The app only listens on this machine and has no login.
 If the database is missing or needs a migration, the page says which command to run;
 the app never creates or migrates the database itself.
+
+## Planning meals
+
+On the plan list, **New plan** starts an empty day against one of your profiles,
+and **Edit or copy** on any plan opens a draft of it. All editing happens in a
+draft: change amounts and units, swap or remove foods, and add foods from the
+library under each meal. The day totals update as you go. A saved plan changes
+only when you choose **Save over**. **Save as new** keeps the original and saves
+the draft under a new name, and **Discard** throws the draft away. Drafts live in
+the database, so an unfinished one is still there after a restart.
+
+The **Foods** page searches the food library by name or brand.
+
+After updating to this version, run `uv run python -m yolk migrate` once. Drafts
+need migration 2, and the app says so until it has run.

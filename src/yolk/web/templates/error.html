@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Error · yolk{% endblock %}
+{% block title %}{{ title or "Error" }} · yolk{% endblock %}
 {% block content %}
 <section class="notice">
-  {% if message %}
-  <h1>Not found</h1>
-  <p>{{ message }}</p>
+  {% if title %}
+  <h1>{{ title }}</h1>
+  {% if message %}<p>{{ message }}</p>{% endif %}
   {% else %}
   <h1>Something went wrong</h1>
   <p>The details are in the terminal running <code>yolk serve</code>.</p>

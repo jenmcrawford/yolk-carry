@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from yolk.db import Connection
+from yolk.errors import MissingYieldError, UnknownUnitError
 from yolk.foods import portion_macros
 from yolk.macros import KCAL_PER_G_CARB, KCAL_PER_G_FAT, Macros
 from yolk.people import targets_for_profile
@@ -71,8 +72,10 @@ class EntryEvaluation:
     food_name: str
     qty: float
     unit: str
-    grams: float
-    macros: Macros
+    # None exactly when `error` is set: the entry could not be measured.
+    grams: float | None
+    macros: Macros | None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,10 +94,12 @@ class DayEvaluation:
     deltas: Macros
     within_tolerance: dict[str, bool]
     slots: list[SlotEvaluation] = field(default_factory=list)
+    # Entries left out of every total because they could not be measured.
+    excluded: int = 0
 
     @property
     def ok(self) -> bool:
-        return all(self.within_tolerance.values())
+        return self.excluded == 0 and all(self.within_tolerance.values())
 
 
 def _pct_of_kcal(grams: float, kcal_per_g: float, total_kcal: float) -> float:
@@ -103,8 +108,17 @@ def _pct_of_kcal(grams: float, kcal_per_g: float, total_kcal: float) -> float:
     return grams * kcal_per_g / total_kcal * 100.0
 
 
-def evaluate(conn: Connection, day_plan_id: int) -> DayEvaluation:
-    """Aggregate a day plan and compare it against its profile's targets."""
+def evaluate(
+    conn: Connection, day_plan_id: int, *, partial: bool = False
+) -> DayEvaluation:
+    """Aggregate a day plan and compare it against its profile's targets.
+
+    By default the first entry that cannot be measured raises, naming the food
+    and unit. With partial=True that entry comes back with `error` set, is
+    left out of every total, and is counted in `excluded`; the day is then
+    never ok. The draft page uses this so one bad entry shows on its own row
+    instead of hiding the whole plan.
+    """
     plan = conn.execute(
         "SELECT name, profile_id FROM day_plans WHERE id = ?", (day_plan_id,)
     ).fetchone()
@@ -120,8 +134,14 @@ def evaluate(conn: Connection, day_plan_id: int) -> DayEvaluation:
 
     by_slot: dict[int, list[EntryEvaluation]] = {}
     for row in rows:
-        grams = to_grams(conn, row["food_id"], row["qty"], row["unit"])
-        macros = portion_macros(conn, row["food_id"], row["qty"], row["unit"])
+        try:
+            grams = to_grams(conn, row["food_id"], row["qty"], row["unit"])
+            macros = portion_macros(conn, row["food_id"], row["qty"], row["unit"])
+            error = None
+        except (UnknownUnitError, MissingYieldError) as exc:
+            if not partial:
+                raise
+            grams, macros, error = None, None, str(exc)
         by_slot.setdefault(row["slot_no"], []).append(
             EntryEvaluation(
                 entry_id=row["id"],
@@ -131,18 +151,22 @@ def evaluate(conn: Connection, day_plan_id: int) -> DayEvaluation:
                 unit=row["unit"],
                 grams=grams,
                 macros=macros,
+                error=error,
             )
         )
 
     slots = [
         SlotEvaluation(
             slot_no=slot_no,
-            totals=sum((e.macros for e in entries), Macros.zero()),
+            totals=sum(
+                (e.macros for e in entries if e.macros is not None), Macros.zero()
+            ),
             entries=entries,
         )
         for slot_no, entries in sorted(by_slot.items())
     ]
     totals = sum((s.totals for s in slots), Macros.zero())
+    excluded = sum(1 for s in slots for e in s.entries if e.error is not None)
 
     target = targets_for_profile(conn, plan["profile_id"])
     profile = conn.execute(
@@ -178,4 +202,5 @@ def evaluate(conn: Connection, day_plan_id: int) -> DayEvaluation:
         deltas=deltas,
         within_tolerance=within_tolerance,
         slots=slots,
+        excluded=excluded,
     )

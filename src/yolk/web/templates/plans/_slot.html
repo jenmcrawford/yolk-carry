@@ -1,35 +1,88 @@
-{# Needs: slot (SlotEvaluation), slot_names (dict[int, str]). #}
-<section class="slot" id="slot-{{ slot.slot_no }}">
-  <h2>{{ slot_names.get(slot.slot_no, "Slot " ~ slot.slot_no) }}</h2>
+{# Needs: ps (PlanSlot).
+   Editing a draft also needs: draft (PlanHeader) and entry_units
+   (dict[int, list[str]]); entry_errors (dict[int, str]) is optional.
+   Without draft the slot is read-only. #}
+<section class="slot" id="slot-{{ ps.slot_no }}">
+  <h2>{{ ps.name }}</h2>
+  {% if ps.slot and ps.slot.entries %}
   <table>
     <thead>
       <tr>
         <th>Food</th><th class="num">Amount</th><th class="num">Grams</th>
         <th class="num">kcal</th><th class="num">Protein</th>
         <th class="num">Fat</th><th class="num">Carbs</th>
+        {% if draft %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
-    {% for entry in slot.entries %}
-      <tr>
+    {% for entry in ps.slot.entries %}
+      {% set action = "/drafts/" ~ draft.id ~ "/entries/" ~ entry.entry_id if draft else "" %}
+      <tr{% if entry.error %} class="has-error"{% endif %}>
         <td>{{ entry.food_name }}</td>
-        <td class="num">{{ "%g"|format(entry.qty) }} {{ entry.unit }}</td>
+        <td class="num">
+          {% if draft %}
+          <form class="amount" method="post" action="{{ action }}"
+                hx-post="{{ action }}" hx-trigger="change"
+                hx-target="#slot-{{ ps.slot_no }}" hx-swap="outerHTML">
+            <input name="qty" value="{{ '%g'|format(entry.qty) }}" inputmode="decimal"
+                   aria-label="Amount of {{ entry.food_name }}">
+            {% set units = entry_units[entry.food_id] %}
+            <select name="unit" aria-label="Unit for {{ entry.food_name }}">
+              {% if entry.unit not in units %}<option selected>{{ entry.unit }}</option>{% endif %}
+              {% for unit in units %}<option{% if unit == entry.unit %} selected{% endif %}>{{ unit }}</option>{% endfor %}
+            </select>
+            <noscript><button type="submit">Update</button></noscript>
+          </form>
+          {% else %}
+          {{ "%g"|format(entry.qty) }} {{ entry.unit }}
+          {% endif %}
+        </td>
+        {% if entry.error %}
+        <td colspan="5" class="entry-error">{{ entry.error }}</td>
+        {% else %}
         <td class="num">{{ "%.0f"|format(entry.grams) }}</td>
         <td class="num">{{ "%.0f"|format(entry.macros.kcal) }}</td>
         <td class="num">{{ "%.1f"|format(entry.macros.protein_g) }}</td>
         <td class="num">{{ "%.1f"|format(entry.macros.fat_g) }}</td>
         <td class="num">{{ "%.1f"|format(entry.macros.carb_g) }}</td>
+        {% endif %}
+        {% if draft %}
+        {% set swap_url = "/foods/search?draft=" ~ draft.id ~ "&slot=" ~ ps.slot_no ~ "&entry=" ~ entry.entry_id %}
+        <td class="actions">
+          <a class="button" href="{{ swap_url }}" hx-get="{{ swap_url }}"
+             hx-target="#picker-{{ ps.slot_no }}">Swap</a>
+          <form method="post" action="{{ action }}/remove" hx-post="{{ action }}/remove"
+                hx-target="#slot-{{ ps.slot_no }}" hx-swap="outerHTML">
+            <button type="submit">Remove</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
+      {% if entry_errors and entry.entry_id in entry_errors %}
+      <tr><td colspan="8" class="entry-error">{{ entry_errors[entry.entry_id] }}</td></tr>
+      {% endif %}
     {% endfor %}
     </tbody>
     <tfoot>
       <tr>
         <td colspan="3">Slot total</td>
-        <td class="num">{{ "%.0f"|format(slot.totals.kcal) }}</td>
-        <td class="num">{{ "%.1f"|format(slot.totals.protein_g) }}</td>
-        <td class="num">{{ "%.1f"|format(slot.totals.fat_g) }}</td>
-        <td class="num">{{ "%.1f"|format(slot.totals.carb_g) }}</td>
+        <td class="num">{{ "%.0f"|format(ps.slot.totals.kcal) }}</td>
+        <td class="num">{{ "%.1f"|format(ps.slot.totals.protein_g) }}</td>
+        <td class="num">{{ "%.1f"|format(ps.slot.totals.fat_g) }}</td>
+        <td class="num">{{ "%.1f"|format(ps.slot.totals.carb_g) }}</td>
+        {% if draft %}<td></td>{% endif %}
       </tr>
     </tfoot>
   </table>
+  {% else %}
+  <p class="muted">Nothing planned for this meal.</p>
+  {% endif %}
+  {% if draft %}
+  {% set add_url = "/foods/search?draft=" ~ draft.id ~ "&slot=" ~ ps.slot_no %}
+  <p class="slot-actions">
+    <a class="button" href="{{ add_url }}" hx-get="{{ add_url }}"
+       hx-target="#picker-{{ ps.slot_no }}">Add food</a>
+  </p>
+  <div class="picker" id="picker-{{ ps.slot_no }}"></div>
+  {% endif %}
 </section>

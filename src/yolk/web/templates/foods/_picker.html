@@ -1,0 +1,13 @@
+{# The food picker under a slot. Needs: draft (PlanHeader), slot (int),
+   entry (int or None: set when swapping), query (str), foods, pick.
+   The search form uses htmx only when pick.target is set (the inline picker). #}
+<form class="search" method="get" action="/foods/search"{% if pick.target %}
+      hx-get="/foods/search" hx-target="#picker-{{ slot }}"{% endif %}>
+  <input type="hidden" name="draft" value="{{ draft.id }}">
+  <input type="hidden" name="slot" value="{{ slot }}">
+  {% if entry is not none %}<input type="hidden" name="entry" value="{{ entry }}">{% endif %}
+  <input type="search" name="q" value="{{ query }}" aria-label="Search foods"
+         placeholder="{{ 'Swap for…' if entry is not none else 'Add a food…' }}">
+  <button type="submit">Search</button>
+</form>
+{% include "foods/_results.html" %}

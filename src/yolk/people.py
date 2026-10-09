@@ -28,6 +28,13 @@ class Person:
     name: str
 
 
+@dataclass(frozen=True)
+class ProfileChoice:
+    id: int
+    name: str
+    kcal: float
+
+
 def list_people(conn: Connection) -> list[Person]:
     rows = conn.execute("SELECT id, name FROM people ORDER BY id").fetchall()
     return [Person(id=row["id"], name=row["name"]) for row in rows]
@@ -139,3 +146,18 @@ def slot_names(conn: Connection, profile_id: int) -> dict[int, str]:
         (profile_id,),
     ).fetchall()
     return {row["slot_no"]: row["name"] for row in rows}
+
+
+def current_profiles(
+    conn: Connection, person_id: int, on_date: str
+) -> list[ProfileChoice]:
+    """Each of the person's profiles as it stands on `on_date`, ordered by name."""
+    rows = conn.execute(
+        "SELECT id, name, kcal FROM macro_profiles m "
+        "WHERE person_id = ? AND effective_on = ("
+        "    SELECT max(effective_on) FROM macro_profiles "
+        "    WHERE person_id = m.person_id AND name = m.name AND effective_on <= ?"
+        ") ORDER BY name",
+        (person_id, on_date),
+    ).fetchall()
+    return [ProfileChoice(id=row["id"], name=row["name"], kcal=row["kcal"]) for row in rows]

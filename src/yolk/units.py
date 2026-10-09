@@ -42,3 +42,28 @@ def to_grams(conn: Connection, food_id: int, qty: float, unit: str) -> float:
 def from_grams(conn: Connection, food_id: int, grams: float, unit: str) -> float:
     """Convert grams back into a display unit for a specific food."""
     return grams / _grams_per_unit(conn, food_id, unit)
+
+
+# Mass units offered for every food, after its own units.
+DISPLAY_MASS_UNITS = ("g", "oz", "lb", "kg")
+
+
+def _own_units(conn: Connection, food_id: int) -> list[str]:
+    rows = conn.execute(
+        "SELECT unit FROM food_units WHERE food_id = ? "
+        "ORDER BY is_default_display DESC, unit",
+        (food_id,),
+    ).fetchall()
+    return [row["unit"] for row in rows]
+
+
+def units_for(conn: Connection, food_id: int) -> list[str]:
+    """Units this food can be measured in: its own first, then mass units."""
+    own = _own_units(conn, food_id)
+    return own + [unit for unit in DISPLAY_MASS_UNITS if unit not in own]
+
+
+def default_portion(conn: Connection, food_id: int) -> tuple[float, str]:
+    """One of the food's usual unit, or 100 g when it has none."""
+    own = _own_units(conn, food_id)
+    return (1.0, own[0]) if own else (100.0, "g")
