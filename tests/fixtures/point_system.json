@@ -79,7 +79,7 @@
       },
       "source": "usda",
       "source_ref": "174289",
-      "verified": true,
+      "verified": false,
       "units": {
         "tbsp": 15,
         "cup": 246
@@ -108,7 +108,7 @@
       },
       "source": "usda",
       "source_ref": "2710049",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 230
       },
@@ -336,7 +336,7 @@
       },
       "source": "usda",
       "source_ref": "172184",
-      "verified": true,
+      "verified": false,
       "units": {
         "yolk": 17
       },
@@ -476,7 +476,7 @@
       },
       "source": "usda",
       "source_ref": "169057",
-      "verified": true,
+      "verified": false,
       "units": {
         "tbsp": 15,
         "cup": 245
@@ -505,7 +505,7 @@
       },
       "source": "usda",
       "source_ref": "2709751",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 240
       },
@@ -587,7 +587,7 @@
       },
       "source": "usda",
       "source_ref": "2710828",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup dry": 188
       },
@@ -615,7 +615,7 @@
       },
       "source": "usda",
       "source_ref": "170287",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 182
       },
@@ -643,7 +643,7 @@
       },
       "source": "usda",
       "source_ref": "171167",
-      "verified": true,
+      "verified": false,
       "units": {
         "tbsp": 18
       },
@@ -811,7 +811,7 @@
       },
       "source": "usda",
       "source_ref": "174899",
-      "verified": true,
+      "verified": false,
       "units": {
         "large bagel": 131
       },
@@ -1176,7 +1176,7 @@
       },
       "source": "usda",
       "source_ref": "746771",
-      "verified": true,
+      "verified": false,
       "units": {
         "orange": 140
       },
@@ -1204,7 +1204,7 @@
       },
       "source": "usda",
       "source_ref": "174673",
-      "verified": true,
+      "verified": false,
       "units": {
         "grapefruit": 246
       },
@@ -1555,7 +1555,7 @@
       },
       "source": "usda",
       "source_ref": "171639",
-      "verified": true,
+      "verified": false,
       "units": {
         "slice": 8.1
       },
@@ -1583,7 +1583,7 @@
       },
       "source": "usda",
       "source_ref": "172182",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 226
       },
@@ -1611,7 +1611,7 @@
       },
       "source": "usda",
       "source_ref": "172941",
-      "verified": true,
+      "verified": false,
       "units": {
         "slice": 16
       },
@@ -1856,7 +1856,7 @@
       },
       "source": "usda",
       "source_ref": "168421",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 21
       },
@@ -1884,7 +1884,7 @@
       },
       "source": "usda",
       "source_ref": "169292",
-      "verified": true,
+      "verified": false,
       "units": {
         "cup": 180
       },

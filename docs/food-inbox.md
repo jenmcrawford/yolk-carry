@@ -52,7 +52,8 @@ The app does the last step only: it imports a CSV of label figures as unchecked 
 | `source_note` | Where the numbers came from, and anything assumed. Kept in the notes. |
 
 Plain numbers only: `12`, not `12g` or `12 g`, and a point for decimals (`1.5`, not `1,5`).
-A file saved from Excel is fine.
+From Excel, save as **CSV UTF-8 (Comma delimited)**; the plain "CSV (Comma
+delimited)" choice is refused with a message saying so.
 
 ---
 

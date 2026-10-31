@@ -16,7 +16,7 @@ from yolk.db import Connection
 from yolk.errors import SourceRequestError, YolkError
 from datetime import date
 
-from yolk.foods import FoodSummary, create_item, food_summary
+from yolk.foods import FoodSummary, create_item, food_summary, recompute_recipes_using
 from yolk.macros import Macros
 from yolk.points import (
     PointRules,
@@ -425,8 +425,15 @@ def _validate_edit(conn: Connection, food_id: int, edit: FoodEdit) -> dict[str, 
             "AND source <> 'manual' LIMIT 1",
             (food_id, unit),
         ).fetchone()
+        recipe = conn.execute(
+            "SELECT f.name FROM food_components c JOIN foods f ON f.id = c.parent_food_id "
+            "WHERE c.child_food_id = ? AND c.unit = ? LIMIT 1",
+            (food_id, unit),
+        ).fetchone()
         if plan is not None:
             in_use.append(f"{unit} (used in plan {plan['name']!r})")
+        elif recipe is not None:
+            in_use.append(f"{unit} (used in recipe {recipe['name']!r})")
         elif portion is not None:
             in_use.append(f"{unit} (the {portion['source']} portion uses it)")
     if in_use:
@@ -445,7 +452,9 @@ def _validate_edit(conn: Connection, food_id: int, edit: FoodEdit) -> dict[str, 
 def update_food(conn: Connection, food_id: int, edit: FoodEdit) -> None:
     """Correct a food everywhere it is used. A checked food becomes unchecked,
     since what was checked is no longer what is stored."""
-    row = conn.execute("SELECT kind FROM foods WHERE id = ?", (food_id,)).fetchone()
+    row = conn.execute(
+        "SELECT kind, role, point_class FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
     if row is None:
         raise LookupError(f"No food with id {food_id}")
     if row["kind"] == "recipe":
@@ -459,6 +468,12 @@ def update_food(conn: Connection, food_id: int, edit: FoodEdit) -> None:
         kcal=edit.kcal, fat_g=edit.fat_g, carb_g=edit.carb_g, protein_g=edit.protein_g,
         fiber_g=edit.fiber_g or 0.0, sugar_alcohol_g=edit.sugar_alcohol_g or 0.0,
     )
+    # The role follows "counts as" only when that changed: fixing a typo on a
+    # supplement must not turn it into a carb.
+    if _point_class(edit.counts_as) == row["point_class"] and edit.counts_as != "free":
+        role = row["role"]
+    else:
+        role = role_for(edit.counts_as, edit.free_role, m, rules)
     try:
         conn.execute(
             "UPDATE foods SET name = ?, brand = ?, role = ?, point_class = ?, "
@@ -467,7 +482,7 @@ def update_food(conn: Connection, food_id: int, edit: FoodEdit) -> None:
             "verified_on = NULL WHERE id = ?",
             (
                 edit.name.strip(), edit.brand.strip(),
-                role_for(edit.counts_as, edit.free_role, m, rules),
+                role,
                 _point_class(edit.counts_as),
                 edit.kcal, edit.fat_g, edit.carb_g, edit.fiber_g,
                 edit.sugar_alcohol_g, edit.protein_g, food_id,
@@ -499,6 +514,7 @@ def update_food(conn: Connection, food_id: int, edit: FoodEdit) -> None:
                 claimed=format_points(food_points(conn, food_id, grams, rules)),
                 commit=False,
             )
+        recompute_recipes_using(conn, food_id)
     except sqlite3.IntegrityError as exc:
         conn.rollback()
         if "UNIQUE" in str(exc) and "foods" in str(exc):

@@ -25,7 +25,7 @@
     {% for entry in ps.slot.entries %}
       {% set action = "/drafts/" ~ draft.id ~ "/entries/" ~ entry.entry_id if draft else "" %}
       <tr{% if entry.error %} class="has-error"{% endif %}>
-        <td>{{ entry.food_name }}</td>
+        <td>{{ entry.food_name }}{% if not entry.fiber_known %} <span class="badge">fiber unknown</span>{% endif %}</td>
         <td class="num">
           {% if draft %}
           <form class="amount" method="post" action="{{ action }}"

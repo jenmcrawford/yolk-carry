@@ -353,6 +353,9 @@ for f in FOODS:
             f["source_note"] = (f"FLAG: computes {p[main]:.2f}{letter} at the coach's portion. "
                                 + f["source_note"]).strip()
             flagged.append(f"{f['name']}: {portion['qty']:g} {portion['unit']} = {p[main]:.2f}{letter}")
+            # Checked means the macros came from USDA or a label AND the coach's
+            # portion checks out; a flagged line does not.
+            f["verified"] = False
 
 BY_NAME = {f["name"]: f for f in FOODS}
 SLOTS = [

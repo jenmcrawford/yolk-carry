@@ -59,7 +59,10 @@ def test_detail_shows_coach_and_computed_points(app, conn):
     assert "3 tbsp = 1F" in text
     assert "coach says 1F, macros say ½F" in text
     assert "USDA FDC 174289" in text
-    assert "Mark checked" not in text  # coach foods from USDA come in checked
+    # A coach line whose macros disagree is not seeded as checked.
+    assert "Mark checked" in text
+    checked = app.get(f"/foods/{_id(conn, 'Chicken breast, raw')}").text
+    assert "Mark checked" not in checked  # USDA macros and an agreeing coach portion
 
 
 def test_food_names_link_to_their_page(app, conn):

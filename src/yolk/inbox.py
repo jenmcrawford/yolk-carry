@@ -98,7 +98,19 @@ def _row_to_label(row: dict[str, str]) -> tuple[LabelInput | None, dict[str, str
 
 
 def _read(path: Path) -> list[tuple[int, dict[str, str]]]:
-    # utf-8-sig and newline="" so a file saved by Excel reads the same as any other.
+    try:
+        return _read_rows(path)
+    except UnicodeDecodeError:
+        raise InboxError([
+            f"{path.name} is not saved as UTF-8. In Excel, use Save As and choose "
+            f"'CSV UTF-8 (Comma delimited)', then import it again."
+        ]) from None
+    except csv.Error as exc:
+        raise InboxError([f"{path.name} could not be read as a CSV: {exc}"]) from None
+
+
+def _read_rows(path: Path) -> list[tuple[int, dict[str, str]]]:
+    # utf-8-sig and newline="" so a UTF-8 file saved by Excel reads the same as any other.
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         header = tuple(reader.fieldnames or ())

@@ -485,6 +485,35 @@ def set_cooked_yield(
     return macros
 
 
+def recipes_using(conn: Connection, food_id: int) -> list[sqlite3.Row]:
+    """Every recipe that contains this food, directly or through another
+    recipe, nearest first. Each row has id, name, and cooked_yield_g."""
+    found: list[sqlite3.Row] = []
+    seen = {food_id}
+    frontier = [food_id]
+    while frontier:
+        parents = conn.execute(
+            f"SELECT DISTINCT f.id, f.name, f.cooked_yield_g FROM food_components c "
+            f"JOIN foods f ON f.id = c.parent_food_id "
+            f"WHERE c.child_food_id IN ({', '.join('?' for _ in frontier)}) ORDER BY f.id",
+            frontier,
+        ).fetchall()
+        frontier = [row["id"] for row in parents if row["id"] not in seen]
+        seen.update(frontier)
+        found.extend(row for row in parents if row["id"] in frontier)
+    return found
+
+
+def recompute_recipes_using(conn: Connection, food_id: int) -> None:
+    """Refresh the cached macros of every recipe containing this food. Does
+    not commit. A recipe with no yield has no cache to refresh."""
+    for recipe in recipes_using(conn, food_id):
+        if recipe["cooked_yield_g"] is not None:
+            _write_computed_macros(
+                conn, recipe["id"], _macros_resolved(conn, recipe["id"], frozenset())
+            )
+
+
 def recompute_recipe(conn: Connection, food_id: int) -> Macros:
     """Recompute and cache a recipe's per-100 g macros."""
     macros = _macros_resolved(conn, food_id, frozenset())

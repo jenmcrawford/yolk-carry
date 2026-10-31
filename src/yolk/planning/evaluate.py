@@ -84,6 +84,9 @@ class EntryEvaluation:
     # The carbs the day counts for this entry: total, or net under a points
     # profile whose carb setting is net.
     counted_carb_g: float | None = None
+    # False when the food's fiber was never recorded: under net carbs it
+    # then counts its total carbs, and the page says so.
+    fiber_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -170,14 +173,14 @@ def evaluate(
             grams = to_grams(conn, row["food_id"], row["qty"], row["unit"])
             macros = portion_macros(conn, row["food_id"], row["qty"], row["unit"])
             points = food_points(conn, row["food_id"], grams, rules)
-            counted = counted_carbs(
-                macros, carb_basis, fiber_known=fiber_known(conn, row["food_id"])
-            )
+            known = fiber_known(conn, row["food_id"])
+            counted = counted_carbs(macros, carb_basis, fiber_known=known)
             error = None
         except (UnknownUnitError, MissingYieldError) as exc:
             if not partial:
                 raise
             grams, macros, points, counted, error = None, None, None, None, str(exc)
+            known = True
         by_slot.setdefault(row["slot_no"], []).append(
             EntryEvaluation(
                 entry_id=row["id"],
@@ -190,6 +193,7 @@ def evaluate(
                 error=error,
                 points=points,
                 counted_carb_g=counted,
+                fiber_known=known,
             )
         )
 
