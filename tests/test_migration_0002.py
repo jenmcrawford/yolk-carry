@@ -24,12 +24,12 @@ def _insert_draft(db, plan_id, name, parent):
     )
 
 
-def test_0002_keeps_every_plan_and_entry(tmp_path):
+def test_0002_keeps_every_plan_and_entry(tmp_path, keto_a_into_old_schema):
     """Build a database at version 1, fill it, then upgrade it in place."""
     shutil.copy(MIGRATIONS_DIR / "0001_baseline.sql", tmp_path / "0001_baseline.sql")
     conn = connect(":memory:")
     apply_migrations(conn, tmp_path)
-    plan_id, _ = seed_keto_plan_a(conn)
+    plan_id = keto_a_into_old_schema(conn)
     plans, entries = _rows(conn, "day_plans"), _rows(conn, "day_plan_entries")
 
     assert 2 in apply_migrations(conn)

@@ -26,9 +26,9 @@ def _at_version_2(tmp_path):
     return conn
 
 
-def test_0003_keeps_profiles_plans_and_evaluation(tmp_path):
+def test_0003_keeps_profiles_plans_and_evaluation(tmp_path, keto_a_into_old_schema):
     conn = _at_version_2(tmp_path)
-    plan_id, _ = seed_keto_plan_a(conn)
+    plan_id = keto_a_into_old_schema(conn)
     profiles = _rows(conn, "macro_profiles", _OLD_PROFILE_COLUMNS)
     slots = _rows(conn, "slot_templates")
     plans, entries = _rows(conn, "day_plans"), _rows(conn, "day_plan_entries")

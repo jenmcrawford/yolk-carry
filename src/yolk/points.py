@@ -13,7 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from yolk.db import Connection
+from yolk.errors import MissingYieldError, RecipeCycleError
+from yolk.foods import macros_per_100g
 from yolk.macros import Macros
+from yolk.units import MASS_UNITS, own_units, to_grams
 
 POINT_TYPES = ("fat", "carb", "protein", "veggie")
 CARB_BASES = ("total", "net")
@@ -164,3 +167,209 @@ def point_hints(
             amount = _fraction(max(_quarters(abs(diff)), 1))
             hints.append(f"{amount}{_LETTERS[name]} {'over' if diff > 0 else 'short'}")
     return tuple(hints)
+
+
+# --- Points for foods in the library -------------------------------------
+
+# Which portion a food is added to a meal at, when it has several.
+_PORTION_ORDER = ("manual", "coach", "label", "claude")
+
+# A coach portion agrees with the macros when its main type lands here.
+AGREEMENT_RANGE = (0.75, 1.25)
+
+
+@dataclass(frozen=True)
+class Portion:
+    qty: float
+    unit: str
+    grams: float
+    source: str
+    # What the source says the portion counts as, in its own words.
+    claimed: str
+
+
+@dataclass(frozen=True)
+class OnePoint:
+    qty: float
+    unit: str
+    grams: float
+    # e.g. "4 oz (113 g) → 1P + ¼F"
+    label: str
+
+
+def fiber_known(conn: Connection, food_id: int) -> bool:
+    """False when an item's fiber was never recorded. Recipes are judged
+    component by component, so they always count as known."""
+    row = conn.execute(
+        "SELECT kind, fiber_g_100g FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+    return row["kind"] == "recipe" or row["fiber_g_100g"] is not None
+
+
+def food_points(
+    conn: Connection, food_id: int, grams: float, rules: PointRules
+) -> Points:
+    """Points for `grams` of a food.
+
+    A recipe scores the sum of its components, each under its own class, so
+    a stir-fry's broccoli stays veggie instead of turning into carb points.
+    """
+    return _food_points(conn, food_id, grams, rules, frozenset())
+
+
+def _food_points(
+    conn: Connection,
+    food_id: int,
+    grams: float,
+    rules: PointRules,
+    seen: frozenset[int],
+) -> Points:
+    row = conn.execute(
+        "SELECT kind, name, point_class, cooked_yield_g FROM foods WHERE id = ?",
+        (food_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+
+    if row["kind"] == "item":
+        per_100g = macros_per_100g(conn, food_id)
+        cls = effective_class(row["point_class"], per_100g, rules)
+        return points_for(
+            per_100g.scale(grams / 100.0), cls, rules,
+            fiber_known=fiber_known(conn, food_id),
+        )
+
+    if food_id in seen:
+        raise RecipeCycleError(
+            f"Recipe {row['name']!r} (id {food_id}) contains itself, directly or "
+            f"through a nested recipe."
+        )
+    if row["cooked_yield_g"] is None:
+        raise MissingYieldError(
+            f"Recipe {row['name']!r} (id {food_id}) has no cooked_yield_g, so its "
+            f"points cannot be computed. Weigh the finished dish and call "
+            f"set_cooked_yield, or use create_recipe(servings=...) instead."
+        )
+    share = grams / row["cooked_yield_g"]
+    total = Points.zero()
+    for c in conn.execute(
+        "SELECT child_food_id, qty, unit FROM food_components "
+        "WHERE parent_food_id = ? ORDER BY id",
+        (food_id,),
+    ).fetchall():
+        child_grams = to_grams(conn, c["child_food_id"], c["qty"], c["unit"]) * share
+        total = total + _food_points(
+            conn, c["child_food_id"], child_grams, rules, seen | {food_id}
+        )
+    return total
+
+
+def _main_type(conn: Connection, food_id: int, per_100g: Points) -> str | None:
+    """The type one point of this food is measured in, or None for a free food."""
+    row = conn.execute(
+        "SELECT kind, point_class FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    if row["kind"] == "item" and row["point_class"] == "free":
+        return None
+    if row["kind"] == "item" and row["point_class"] is not None:
+        return row["point_class"]
+    # Automatic, or a recipe: whichever type it carries most of.
+    return max(POINT_TYPES, key=lambda name: getattr(per_100g, name))
+
+
+def _display_unit(conn: Connection, food_id: int) -> tuple[str, float]:
+    own = own_units(conn, food_id)
+    if own:
+        return own[0], to_grams(conn, food_id, 1.0, own[0])
+    return "oz", MASS_UNITS["oz"]
+
+
+def format_qty(qty: float) -> str:
+    """3.5 -> '3½', 0.25 -> '¼', 4.0 -> '4'."""
+    return _fraction(_quarters(qty))
+
+
+def one_point(conn: Connection, food_id: int, rules: PointRules) -> OnePoint | None:
+    """How much of a food is one point of its main type, in its usual unit.
+
+    None for a free food, and for one with none of its main type: there is
+    no amount of olive oil that is one carb.
+    """
+    per_100g = food_points(conn, food_id, 100.0, rules)
+    main = _main_type(conn, food_id, per_100g)
+    if main is None or getattr(per_100g, main) <= 0:
+        return None
+    unit, grams_per_unit = _display_unit(conn, food_id)
+    exact_grams = 100.0 / getattr(per_100g, main)
+    qty = max(round(exact_grams / grams_per_unit * 4) / 4, 0.25)
+    grams = qty * grams_per_unit
+    points = food_points(conn, food_id, grams, rules)
+    return OnePoint(
+        qty=qty,
+        unit=unit,
+        grams=grams,
+        label=f"{format_qty(qty)} {unit} ({grams:.0f} g) → {format_points(points)}",
+    )
+
+
+def portions(conn: Connection, food_id: int) -> list[Portion]:
+    """Every source's portion for a food, in the order they are preferred."""
+    rows = conn.execute(
+        "SELECT source, qty, unit, claimed FROM point_portions WHERE food_id = ?",
+        (food_id,),
+    ).fetchall()
+    found = [
+        Portion(
+            qty=row["qty"],
+            unit=row["unit"],
+            grams=to_grams(conn, food_id, row["qty"], row["unit"]),
+            source=row["source"],
+            claimed=row["claimed"],
+        )
+        for row in rows
+    ]
+    return sorted(found, key=lambda p: _PORTION_ORDER.index(p.source))
+
+
+def preferred_portion(conn: Connection, food_id: int) -> Portion | None:
+    """The portion a food is added to a meal at: Jen's own, then the coach's."""
+    found = portions(conn, food_id)
+    return found[0] if found else None
+
+
+def add_portion(
+    conn: Connection,
+    food_id: int,
+    *,
+    source: str,
+    qty: float,
+    unit: str,
+    claimed: str,
+    commit: bool = True,
+) -> None:
+    """Record what a source says one serving of points is.
+
+    The unit is resolved before writing, so a portion nobody can measure is
+    never stored.
+    """
+    to_grams(conn, food_id, qty, unit)
+    conn.execute(
+        "INSERT INTO point_portions (food_id, source, qty, unit, claimed) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (food_id, source, qty, unit, claimed),
+    )
+    if commit:
+        conn.commit()
+
+
+def agrees(
+    conn: Connection, food_id: int, points: Points, rules: PointRules
+) -> bool:
+    """Whether a portion's main type lands within AGREEMENT_RANGE of one point."""
+    main = _main_type(conn, food_id, food_points(conn, food_id, 100.0, rules))
+    if main is None:
+        return True
+    low, high = AGREEMENT_RANGE
+    return low <= getattr(points, main) <= high
