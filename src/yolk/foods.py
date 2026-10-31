@@ -100,7 +100,7 @@ def macros_per_100g(conn: Connection, food_id: int) -> Macros:
     """
     row = conn.execute(
         "SELECT kind, name, kcal_100g, protein_g_100g, fat_g_100g, carb_g_100g, "
-        "fiber_g_100g FROM foods WHERE id = ?",
+        "fiber_g_100g, sugar_alcohol_g_100g FROM foods WHERE id = ?",
         (food_id,),
     ).fetchone()
     if row is None:
@@ -117,6 +117,7 @@ def macros_per_100g(conn: Connection, food_id: int) -> Macros:
         fat_g=row["fat_g_100g"] or 0.0,
         carb_g=row["carb_g_100g"] or 0.0,
         fiber_g=row["fiber_g_100g"] or 0.0,
+        sugar_alcohol_g=row["sugar_alcohol_g_100g"] or 0.0,
     )
 
 

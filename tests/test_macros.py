@@ -45,3 +45,19 @@ def test_profile_targets_rest_day():
     assert t.fat_g == pytest.approx(91.65, abs=0.01)
     assert t.carb_g == pytest.approx(95.18, abs=0.01)
     assert t.protein_g == pytest.approx(227.36, abs=0.01)
+
+
+def test_sugar_alcohol_adds_and_scales():
+    total = Macros(carb_g=9, sugar_alcohol_g=2) + Macros(carb_g=1, sugar_alcohol_g=1)
+    assert total.sugar_alcohol_g == 3
+    assert total.scale(2).sugar_alcohol_g == 6
+
+
+def test_macros_per_100g_reads_sugar_alcohol(db):
+    from yolk.foods import create_item, macros_per_100g
+
+    food_id = create_item(
+        db, name="Granola", role="fat", macros=Macros(kcal=500, fat_g=50, carb_g=30)
+    )
+    db.execute("UPDATE foods SET sugar_alcohol_g_100g = 7 WHERE id = ?", (food_id,))
+    assert macros_per_100g(db, food_id).sugar_alcohol_g == 7

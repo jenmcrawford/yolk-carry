@@ -134,6 +134,7 @@ def compare(draft: DayEvaluation, saved: DayEvaluation) -> Macros:
         fat_g=draft.totals.fat_g - saved.totals.fat_g,
         carb_g=draft.totals.carb_g - saved.totals.carb_g,
         fiber_g=draft.totals.fiber_g - saved.totals.fiber_g,
+        sugar_alcohol_g=draft.totals.sugar_alcohol_g - saved.totals.sugar_alcohol_g,
     )
 
 

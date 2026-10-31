@@ -32,7 +32,6 @@ def test_0003_keeps_profiles_plans_and_evaluation(tmp_path):
     profiles = _rows(conn, "macro_profiles", _OLD_PROFILE_COLUMNS)
     slots = _rows(conn, "slot_templates")
     plans, entries = _rows(conn, "day_plans"), _rows(conn, "day_plan_entries")
-    totals = evaluate(conn, plan_id).totals
 
     assert 3 in apply_migrations(conn)
 
@@ -40,7 +39,13 @@ def test_0003_keeps_profiles_plans_and_evaluation(tmp_path):
     assert [row[: len(slots[0])] for row in _rows(conn, "slot_templates")] == slots
     assert _rows(conn, "day_plans") == plans
     assert _rows(conn, "day_plan_entries") == entries
-    assert evaluate(conn, plan_id).totals == totals
+    # evaluate() reads the latest schema, so it cannot run before upgrading.
+    # The upgraded plan must instead evaluate exactly as a freshly built one.
+    fresh = connect(":memory:")
+    apply_migrations(fresh)
+    fresh_plan, _ = seed_keto_plan_a(fresh)
+    assert evaluate(conn, plan_id).totals == evaluate(fresh, fresh_plan).totals
+    fresh.close()
     bases = {row["basis"] for row in conn.execute("SELECT basis FROM macro_profiles")}
     assert bases == {"macros"}
     conn.close()
