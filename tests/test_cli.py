@@ -113,3 +113,33 @@ def test_serve_defaults_to_port_8000(db_path, monkeypatch):
     )
     main(["serve"])
     assert calls == [{"host": "127.0.0.1", "port": 8000}]
+
+
+def test_seed_points_command_reports(db_path, capsys):
+    from yolk.db.connection import create_schema
+    from yolk.seed import seed_keto_plan_a
+
+    conn = connect(db_path)
+    create_schema(conn)
+    seed_keto_plan_a(conn)
+    conn.close()
+
+    assert main(["seed", "points"]) == 0
+    out = capsys.readouterr().out
+    assert "Active recovery" in out
+    assert "created" in out and "attached" in out and "flagged" in out
+
+
+def test_seed_points_twice_says_so(db_path, capsys):
+    main(["init", "--seed"])
+    capsys.readouterr()
+    assert main(["seed", "points"]) == 0
+    assert "already" in capsys.readouterr().out
+
+
+def test_init_seed_loads_both(db_path):
+    assert main(["init", "--seed"]) == 0
+    conn = connect(db_path)
+    names = {row["name"] for row in conn.execute("SELECT name FROM macro_profiles")}
+    assert names == {"training", "Active recovery"}
+    conn.close()

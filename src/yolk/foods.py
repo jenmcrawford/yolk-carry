@@ -35,9 +35,14 @@ def create_item(
     units: dict[str, float] | None = None,
     notes: str | None = None,
     point_class: str | None = None,
+    fiber_known: bool = True,
+    sugar_alcohol_g_100g: float | None = None,
     commit: bool = True,
 ) -> int:
     """Create a purchased food. Macros are per 100 g.
+
+    `fiber_known=False` stores fiber as NULL (never recorded) rather than 0:
+    under net carbs the two differ, and only NULL says the number is missing.
 
     `point_class` overrides how the food is scored in points. A 'veg' food
     defaults to 'veggie', since whether carbs count as veggie is a judgement
@@ -59,13 +64,14 @@ def create_item(
         row = conn.execute(
             "INSERT INTO foods (kind, name, brand, role, kcal_100g, protein_g_100g, "
             "fat_g_100g, carb_g_100g, fiber_g_100g, source, source_ref, verified, "
-            "verified_on, notes, point_class) "
-            "VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "verified_on, notes, point_class, sugar_alcohol_g_100g) "
+            "VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (
                 name, brand, role,
                 macros.kcal, macros.protein_g, macros.fat_g,
-                macros.carb_g, macros.fiber_g,
+                macros.carb_g, macros.fiber_g if fiber_known else None,
                 source, source_ref, int(verified), verified_on, notes, point_class,
+                sugar_alcohol_g_100g,
             ),
         ).fetchone()
         food_id = row["id"]
