@@ -279,11 +279,26 @@ def _main_type(conn: Connection, food_id: int, per_100g: Points) -> str | None:
     return max(POINT_TYPES, key=lambda name: getattr(per_100g, name))
 
 
-def _display_unit(conn: Connection, food_id: int) -> tuple[str, float]:
+def _quarter_units(grams: float, grams_per_unit: float) -> float:
+    """`grams` in a unit, to the nearest quarter, and never below a quarter."""
+    return max(round(grams / grams_per_unit * 4) / 4, 0.25)
+
+
+def _display_unit(conn: Connection, food_id: int, grams: float) -> tuple[str, float]:
+    """The food's own unit whose nearest quarter lands closest to `grams`.
+
+    A quarter cup is the smallest step in cups, so a one-point portion of
+    27 g reads as 1¾ tbsp, not ¼ cup. Ties go to the unit listed first (the
+    food's default display unit). A food with no units of its own uses ounces.
+    """
     own = own_units(conn, food_id)
-    if own:
-        return own[0], to_grams(conn, food_id, 1.0, own[0])
-    return "oz", MASS_UNITS["oz"]
+    if not own:
+        return "oz", MASS_UNITS["oz"]
+    candidates = [(unit, to_grams(conn, food_id, 1.0, unit)) for unit in own]
+    return min(
+        candidates,
+        key=lambda c: abs(_quarter_units(grams, c[1]) * c[1] - grams),
+    )
 
 
 def format_qty(qty: float) -> str:
@@ -301,9 +316,9 @@ def one_point(conn: Connection, food_id: int, rules: PointRules) -> OnePoint | N
     main = _main_type(conn, food_id, per_100g)
     if main is None or getattr(per_100g, main) <= 0:
         return None
-    unit, grams_per_unit = _display_unit(conn, food_id)
     exact_grams = 100.0 / getattr(per_100g, main)
-    qty = max(round(exact_grams / grams_per_unit * 4) / 4, 0.25)
+    unit, grams_per_unit = _display_unit(conn, food_id, exact_grams)
+    qty = _quarter_units(exact_grams, grams_per_unit)
     grams = qty * grams_per_unit
     points = food_points(conn, food_id, grams, rules)
     return OnePoint(
@@ -373,3 +388,14 @@ def agrees(
         return True
     low, high = AGREEMENT_RANGE
     return low <= getattr(points, main) <= high
+
+
+def entry_default(conn: Connection, food_id: int) -> tuple[float, str]:
+    """The amount a food is added to a meal at: its preferred point portion,
+    or, for a food no source has portioned, one of its usual unit."""
+    from yolk.units import default_portion
+
+    portion = preferred_portion(conn, food_id)
+    if portion is not None:
+        return portion.qty, portion.unit
+    return default_portion(conn, food_id)

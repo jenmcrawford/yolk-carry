@@ -12,6 +12,7 @@
         <th>Food</th><th>Role</th>
         <th class="num">kcal</th><th class="num">Protein</th>
         <th class="num">Fat</th><th class="num">Carbs</th>
+        <th>One point</th><th>Coach</th>
         <th>Units</th>
         {% if pick %}<th></th>{% endif %}
       </tr>
@@ -32,6 +33,12 @@
         {% else %}
         <td colspan="4" class="muted">not computed</td>
         {% endif %}
+        <td>{% if food.one_point %}{{ food.one_point.label }}{% elif food.point_class == "free" %}<span class="muted">free</span>{% else %}—{% endif %}</td>
+        <td>
+          {% if food.coach %}{{ food.coach.qty|qty }} {{ food.coach.unit }} = {{ food.coach.claimed }}
+          {% if food.disagrees %}<span class="flag">coach says {{ food.coach.claimed }}, macros say {{ food.coach_points|points }}</span>{% endif %}
+          {% endif %}
+        </td>
         <td>{% for unit, grams in food.units %}{{ unit }} = {{ "%g"|format(grams) }} g{% if not loop.last %}, {% endif %}{% endfor %}</td>
         {% if pick %}
         <td class="actions">

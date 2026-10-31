@@ -125,3 +125,15 @@ def test_unknown_fiber_under_net_counts_total(db):
     db.execute("UPDATE foods SET fiber_g_100g = NULL WHERE id = ?", (food_id,))
     db.execute("UPDATE settings SET value = 'net' WHERE key = 'carb_basis'")
     assert food_points(db, food_id, 100, load_rules(db)) == Points(carb=1)
+
+
+def test_one_point_portion_picks_the_unit_that_fits(db):
+    # One fat point of almond butter is ~27 g: 1¾ tbsp, not ¼ cup (62 g).
+    food_id = create_item(
+        db, name="Almond butter", role="fat",
+        macros=Macros(kcal=614, fat_g=55.5, carb_g=18.8, protein_g=21.0),
+        units={"cup": 250.0, "tbsp": 16.0},
+    )
+    portion = one_point(db, food_id, load_rules(db))
+    assert portion.unit == "tbsp"
+    assert portion.qty == 1.75
