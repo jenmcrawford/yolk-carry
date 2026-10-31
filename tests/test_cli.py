@@ -143,3 +143,24 @@ def test_init_seed_loads_both(db_path):
     names = {row["name"] for row in conn.execute("SELECT name FROM macro_profiles")}
     assert names == {"training", "Active recovery"}
     conn.close()
+
+
+def test_import_foods_command(db_path, tmp_path, capsys):
+    from yolk.inbox import INBOX_COLUMNS
+
+    main(["init"])
+    good = tmp_path / "good.csv"
+    good.write_text(
+        ",".join(INBOX_COLUMNS) + "\n"
+        "Chicken Birria,On The Street Foods,Costco,4 oz (113 g),113,150,7,1,,,20,protein,,,label\n"
+        "Bone broth,Kettle & Fire,Sprouts,1 cup,240,40,0,0,0,,9,free:beverage,cup,240,\n",
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(["import-foods", str(good)]) == 0
+    assert "Imported 2, skipped 0" in capsys.readouterr().out
+
+    bad = tmp_path / "bad.csv"
+    bad.write_text(",".join(INBOX_COLUMNS) + "\nOops,,,,,,,,,,,,,,\n", encoding="utf-8")
+    assert main(["import-foods", str(bad)]) == 1
+    assert "line 2" in capsys.readouterr().err

@@ -14,6 +14,7 @@ from yolk.config import database_path
 from yolk.db.connection import connect
 from yolk.db.migrate import apply_migrations
 from yolk.errors import YolkError
+from yolk.inbox import import_inbox
 from yolk.seed import SeedReport, seed_keto_plan_a, seed_point_system
 from yolk.snapshot import DEFAULT_DIR, export_database, import_database
 from yolk.web.app import create_app
@@ -80,6 +81,20 @@ def _cmd_seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_foods(args: argparse.Namespace) -> int:
+    conn = connect(_require_existing_database())
+    try:
+        report = import_inbox(conn, Path(args.file))
+    finally:
+        conn.close()
+    print(f"Imported {len(report.created)}, skipped {len(report.skipped)}.")
+    for name in report.created:
+        print(f"  imported (unchecked): {name}")
+    for name in report.skipped:
+        print(f"  skipped, already in the library: {name}")
+    return 0
+
+
 def _cmd_migrate(args: argparse.Namespace) -> int:
     conn = connect(_require_existing_database())
     try:
@@ -138,6 +153,12 @@ def _parser() -> argparse.ArgumentParser:
     seed = sub.add_parser("seed", help="add seed data to an existing database")
     seed.add_argument("what", choices=["points"], help="points: the coach's point system")
     seed.set_defaults(func=_cmd_seed)
+
+    import_foods = sub.add_parser(
+        "import-foods", help="add new foods from a receipt inbox CSV (docs/food-inbox.md)"
+    )
+    import_foods.add_argument("file", help="a CSV with the columns of docs/food-inbox-template.csv")
+    import_foods.set_defaults(func=_cmd_import_foods)
 
     migrate = sub.add_parser("migrate", help="apply pending migrations")
     migrate.set_defaults(func=_cmd_migrate)

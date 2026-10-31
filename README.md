@@ -36,6 +36,7 @@ into an empty database.
 | `uv run python -m yolk init [--seed]` | Create the database, apply migrations, optionally seed |
 | `uv run python -m yolk migrate` | Apply pending migrations |
 | `uv run python -m yolk seed points` | Add the coach's point system (Active recovery day and food lists) to an existing database |
+| `uv run python -m yolk import-foods FILE` | Add foods from a receipt inbox CSV ([docs/food-inbox.md](docs/food-inbox.md)) |
 | `uv run python -m yolk export [--out DIR]` | Write every table to JSON |
 | `uv run python -m yolk import [--from DIR]` | Load JSON into an empty database |
 | `uv run python -m yolk serve [--port N]` | Run the web app at http://127.0.0.1:8000 |
@@ -94,3 +95,15 @@ meals and their allotments (7:00 is 1F 1C 1P, and so on), and the coach's food l
 
 After updating to this version, run `uv run python -m yolk migrate` once (migration 3),
 then `uv run python -m yolk seed points`.
+
+## Adding foods
+
+**Foods → New food** adds a food two ways. **From USDA**: search, then **Add** with what
+it counts as. **From a label**: type the label per serving, as printed; the points show
+before you save ("4 pancake (116 g) counts as 1C + ¾P + ¼F"). Either way the food is
+**unchecked** until you open its page, compare it with the package, and **Mark checked**.
+**Edit** on a food's page fixes its figures everywhere it is used, and lets you set your own
+portion beside the coach's.
+
+For a whole haul, hand the receipt to Claude in a session and import the CSV it writes:
+see [docs/food-inbox.md](docs/food-inbox.md).
