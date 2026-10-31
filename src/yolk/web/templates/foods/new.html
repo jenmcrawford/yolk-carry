@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}New food · yolk{% endblock %}
+{% macro field(name, label, hint="", text=False) -%}
+<div class="field{% if errors[name] %} has-error{% endif %}" id="field-{{ name }}">
+  <label for="{{ name }}">{{ label }}</label>
+  <input id="{{ name }}" name="{{ name }}" value="{{ form[name] }}"{% if not text %} inputmode="decimal"{% endif %}>
+  {% if hint %}<span class="muted">{{ hint }}</span>{% endif %}
+  {% if errors[name] %}<p class="entry-error">{{ errors[name] }}</p>{% endif %}
+</div>
+{%- endmacro %}
+{% block content %}
+<h1>New food</h1>
+<p class="muted">Type the label as printed, per serving. The food is saved as unchecked until you mark it checked against the package.</p>
+<form class="label-form" method="post" action="/foods/new"
+      hx-post="/foods/new/preview" hx-trigger="change" hx-target="#preview" hx-swap="outerHTML">
+  <section class="totals">
+    <h2>Food</h2>
+    {{ field("name", "Name", text=True) }}
+    {{ field("brand", "Brand", hint="optional", text=True) }}
+    <div class="field{% if errors.counts_as %} has-error{% endif %}" id="field-counts_as">
+      <label for="counts_as">Counts as</label>
+      <select id="counts_as" name="counts_as">
+        {% for value in counts_as %}<option value="{{ value }}"{% if form.counts_as == value %} selected{% endif %}>{{ "automatic (its biggest macro)" if value == "auto" else value }}</option>{% endfor %}
+      </select>
+      {% if errors.counts_as %}<p class="entry-error">{{ errors.counts_as }}</p>{% endif %}
+    </div>
+    <div class="field{% if errors.free_role %} has-error{% endif %}" id="field-free_role">
+      <label for="free_role">Free food kind</label>
+      <select id="free_role" name="free_role">
+        <option value="">—</option>
+        {% for value in free_roles %}<option value="{{ value }}"{% if form.free_role == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
+      </select>
+      <span class="muted">only for free foods</span>
+      {% if errors.free_role %}<p class="entry-error">{{ errors.free_role }}</p>{% endif %}
+    </div>
+  </section>
+  <section class="totals">
+    <h2>Label, per serving</h2>
+    {{ field("serving_g", "Serving size (g)") }}
+    {{ field("unit_qty", "Units in a serving", hint="e.g. 4") }}
+    {{ field("unit", "Unit name", hint="e.g. pancake; blank means 'serving'", text=True) }}
+    {{ field("kcal", "Calories") }}
+    {{ field("fat_g", "Fat (g)") }}
+    {{ field("carb_g", "Total carbs (g)") }}
+    {{ field("fiber_g", "Fiber (g)", hint="blank if the label has none") }}
+    {{ field("sugar_alcohol_g", "Sugar alcohols (g)", hint="optional") }}
+    {{ field("protein_g", "Protein (g)") }}
+    {{ field("notes", "Notes", hint="optional, e.g. where you bought it", text=True) }}
+  </section>
+  <section class="totals">
+    <h2>Points</h2>
+    <div class="preview" id="preview"><p class="muted">Fill in the label to see what it counts as.</p></div>
+  </section>
+  <button type="submit">Save food</button>
+</form>
+{% endblock %}

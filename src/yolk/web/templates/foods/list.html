@@ -2,6 +2,7 @@
 {% block title %}Foods · yolk{% endblock %}
 {% block content %}
 <h1>Foods</h1>
+<p><a class="button" href="/foods/new">New food</a></p>
 <form class="search" method="get" action="/foods" role="search">
   <label class="visually-hidden" for="q">Search foods</label>
   <input id="q" name="q" type="search" value="{{ query }}" placeholder="Name or brand">

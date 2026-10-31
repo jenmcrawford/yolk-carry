@@ -1,0 +1,10 @@
+{# Needs: preview (LabelPreview), errors (dict[str, str]). #}
+<div class="preview" id="preview">
+  {% if errors %}
+  <p class="muted">Fix these to see the points:</p>
+  <ul class="entry-error">{% for field, message in errors.items() %}<li>{{ message }}</li>{% endfor %}</ul>
+  {% else %}
+  <p><strong>{{ preview.serving_text }}</strong> counts as <strong>{{ preview.serving_points }}</strong>.</p>
+  {% if preview.one_point %}<p class="muted">One point: {{ preview.one_point }}</p>{% endif %}
+  {% endif %}
+</div>
