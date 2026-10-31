@@ -153,3 +153,78 @@ def test_current_profiles_lists_each_profile_as_it_stands_on_a_date(db):
         )
     choices = current_profiles(db, pid, "2026-08-09")
     assert [(c.name, c.kcal) for c in choices] == [("rest", 2115), ("training", 2150)]
+
+
+ACTIVE_RECOVERY = (
+    (1, "7:00", "07:00", (1, 1, 1, 0)),
+    (2, "10:00", "10:00", (1, 0, 1, 0)),
+    (3, "12:30", "12:30", (1, 1, 1, 0)),
+    (4, "3:00", "15:00", (1, 0, 1, 0)),
+    (5, "5:30", "17:30", (1, 0, 1, 0)),
+    (6, "8:30", "20:30", (1, 1, 1, 1)),
+)
+
+
+def _active_recovery(db):
+    from yolk.people import create_points_profile
+    from yolk.points import Points
+
+    pid = create_person(db, "Jen")
+    profile_id = create_points_profile(
+        db, pid, name="Active recovery", effective_on="2026-10-31"
+    )
+    for slot_no, name, time_of_day, pts in ACTIVE_RECOVERY:
+        create_slot(
+            db, pid, profile_id, slot_no=slot_no, name=name,
+            time_of_day=time_of_day, allotment=Points(*pts),
+        )
+    return pid, profile_id
+
+
+def test_active_recovery_targets_match_the_coach(db):
+    _, profile_id = _active_recovery(db)
+    t = targets_for_profile(db, profile_id)
+    assert t.fat_g == 90
+    assert t.carb_g == 85
+    assert t.protein_g == 150
+    assert t.kcal == 1750
+
+
+def test_points_profile_defaults_to_wider_kcal_window(db):
+    _, profile_id = _active_recovery(db)
+    row = db.execute(
+        "SELECT basis, kcal_tol_pct, protein_tol_g, macro_pct_tol FROM macro_profiles "
+        "WHERE id = ?", (profile_id,)
+    ).fetchone()
+    assert tuple(row) == ("points", 5.0, 8.0, 3.0)
+
+
+def test_current_profiles_lists_points_profile_kcal(db):
+    pid, _ = _active_recovery(db)
+    [choice] = current_profiles(db, pid, "2026-11-01")
+    assert choice.name == "Active recovery"
+    assert choice.kcal == 1750
+
+
+def test_slot_allotments_read_back(db):
+    from yolk.people import profile_basis, slot_allotments
+    from yolk.points import Points
+
+    _, profile_id = _active_recovery(db)
+    allotments = slot_allotments(db, profile_id)
+    assert allotments[6] == Points(1, 1, 1, 1)
+    assert allotments[2] == Points(fat=1, protein=1)
+    assert profile_basis(db, profile_id) == "points"
+
+
+def test_slot_allotments_empty_for_macros_profile(db):
+    from yolk.people import profile_basis, slot_allotments
+
+    pid = create_person(db, "Jen")
+    profile_id = create_profile(
+        db, pid, name="training", effective_on="2026-07-14",
+        kcal=2150, fat_pct=34, carb_pct=28, protein_pct=38,
+    )
+    create_slot(db, pid, profile_id, slot_no=1, name="Meal 1", time_of_day="06:30")
+    assert slot_allotments(db, profile_id) == {}
+    assert profile_basis(db, profile_id) == "macros"
