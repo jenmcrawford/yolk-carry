@@ -13,9 +13,13 @@ from yolk.food_entry import (
     FREE_ROLES,
     LabelInput,
     LabelInputError,
+    UsdaUnavailable,
     create_label_food,
+    create_usda_food,
     preview,
+    usda_search,
 )
+from yolk.points import load_rules
 from yolk.web.deps import ConnDep, ViewerDep
 from yolk.web.templating import templates
 
@@ -83,7 +87,10 @@ def label_form(
 LabelFormDep = Annotated[LabelForm, Depends(label_form)]
 
 
-def _new_page(request: Request, viewer, form: LabelForm, *, errors=None, status_code=200):
+def _new_page(
+    request: Request, viewer, form: LabelForm, *, errors=None, usda_error=None,
+    status_code=200,
+):
     return templates.TemplateResponse(
         request,
         "foods/new.html",
@@ -91,6 +98,7 @@ def _new_page(request: Request, viewer, form: LabelForm, *, errors=None, status_
             "viewer": viewer,
             "form": form.values,
             "errors": errors or {},
+            "usda_error": usda_error,
             "counts_as": COUNTS_AS,
             "free_roles": FREE_ROLES,
         },
@@ -123,4 +131,43 @@ def save_new_food(request: Request, conn: ConnDep, viewer: ViewerDep, form: Labe
         food_id = create_label_food(conn, inp)
     except LabelInputError as exc:
         return _new_page(request, viewer, form, errors=exc.errors, status_code=422)
+    return RedirectResponse(f"/foods/{food_id}", status_code=303)
+
+
+@router.get("/foods/new/usda", response_class=HTMLResponse)
+def usda_results(request: Request, conn: ConnDep, q: str = ""):
+    query = q.strip()
+    context = {"query": query, "counts_as": COUNTS_AS, "free_roles": FREE_ROLES}
+    if query:
+        try:
+            context["choices"] = usda_search(query, load_rules(conn))
+        except UsdaUnavailable as exc:
+            # A missing key is a setup step, not a crash: say what to do.
+            context["unavailable"] = str(exc)
+    return templates.TemplateResponse(request, "foods/_usda_results.html", context)
+
+
+@router.post("/foods/new/usda")
+def add_usda_food(
+    request: Request,
+    conn: ConnDep,
+    viewer: ViewerDep,
+    fdc_id: Annotated[int, Form()],
+    counts_as: Annotated[str, Form()] = "auto",
+    free_role: Annotated[str, Form()] = "",
+):
+    try:
+        food_id = create_usda_food(
+            conn, fdc_id, counts_as=counts_as, free_role=free_role or None
+        )
+    except LabelInputError as exc:
+        return _new_page(
+            request, viewer, label_form(), usda_error=" ".join(exc.errors.values()),
+            status_code=422,
+        )
+    except UsdaUnavailable as exc:
+        return _new_page(
+            request, viewer, label_form(), usda_error=f"USDA could not be reached: {exc}",
+            status_code=503,
+        )
     return RedirectResponse(f"/foods/{food_id}", status_code=303)

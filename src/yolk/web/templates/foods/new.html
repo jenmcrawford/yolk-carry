@@ -10,6 +10,18 @@
 {%- endmacro %}
 {% block content %}
 <h1>New food</h1>
+<section class="totals">
+  <h2>From USDA</h2>
+  {% if usda_error %}<p class="entry-error">{{ usda_error }}</p>{% endif %}
+  <form class="search" method="get" action="/foods/new/usda" role="search"
+        hx-get="/foods/new/usda" hx-target="#usda-results" hx-swap="outerHTML">
+    <label class="visually-hidden" for="usda-q">Search USDA</label>
+    <input id="usda-q" name="q" type="search" placeholder="Search USDA, e.g. chicken thigh roasted">
+    <button type="submit">Search USDA</button>
+  </form>
+  <div class="usda-results" id="usda-results"></div>
+</section>
+<h2>From a label</h2>
 <p class="muted">Type the label as printed, per serving. The food is saved as unchecked until you mark it checked against the package.</p>
 <form class="label-form" method="post" action="/foods/new"
       hx-post="/foods/new/preview" hx-trigger="change" hx-target="#preview" hx-swap="outerHTML">

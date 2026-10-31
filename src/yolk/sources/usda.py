@@ -26,6 +26,9 @@ NUTRIENT_PROTEIN = 1003
 NUTRIENT_FAT = 1004
 NUTRIENT_CARB = 1005
 NUTRIENT_FIBER = 1079
+# Foundation foods often report energy only by Atwater factors. Specific
+# factors (2048) are the closer of the two to what a label would print.
+NUTRIENT_KCAL_ATWATER = (2048, 2047)
 
 # measureUnit names that are not units anyone cooks with: 'undetermined' is
 # FDC's placeholder, and RACC is the regulatory Reference Amount Customarily
@@ -111,7 +114,10 @@ def parse_macros(payload: dict) -> Macros:
         if nutrient_id is not None and "amount" in entry:
             by_id[nutrient_id] = entry["amount"]
 
-    if NUTRIENT_KCAL not in by_id:
+    kcal = by_id.get(NUTRIENT_KCAL)
+    if kcal is None:
+        kcal = next((by_id[i] for i in NUTRIENT_KCAL_ATWATER if i in by_id), None)
+    if kcal is None:
         raise ValueError(
             f"No energy (nutrient {NUTRIENT_KCAL}) in FDC payload for "
             f"{payload.get('description', 'unknown food')!r}. Refusing to import a "
@@ -119,7 +125,7 @@ def parse_macros(payload: dict) -> Macros:
         )
 
     return Macros(
-        kcal=by_id[NUTRIENT_KCAL],
+        kcal=kcal,
         protein_g=by_id.get(NUTRIENT_PROTEIN, 0.0),
         fat_g=by_id.get(NUTRIENT_FAT, 0.0),
         carb_g=by_id.get(NUTRIENT_CARB, 0.0),
@@ -179,6 +185,7 @@ def import_food(
     *,
     role: str,
     units: dict[str, float] | None = None,
+    commit: bool = True,
 ) -> int:
     """Fetch a food from FDC and insert it as an item.
 
@@ -201,4 +208,5 @@ def import_food(
         source_ref=str(fdc_id),
         verified=False,
         units=resolved_units,
+        commit=commit,
     )

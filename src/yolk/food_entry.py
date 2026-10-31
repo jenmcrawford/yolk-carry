@@ -13,7 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from yolk.db import Connection
-from yolk.errors import YolkError
+from yolk.errors import SourceRequestError, YolkError
 from yolk.foods import create_item
 from yolk.macros import Macros
 from yolk.points import (
@@ -27,6 +27,7 @@ from yolk.points import (
     one_point_from,
     points_for,
 )
+from yolk.sources import usda
 
 COUNTS_AS = ("auto", "fat", "carb", "protein", "veggie", "free")
 FREE_ROLES = ("veg", "sauce", "beverage")
@@ -229,3 +230,94 @@ def create_label_food(
         conn.commit()
     return food_id
 
+
+# --- From USDA ---------------------------------------------------------------
+
+class UsdaUnavailable(YolkError):
+    """USDA could not be asked: no API key, or the request failed."""
+
+
+_SEARCH_NUTRIENTS = {1003: "protein_g", 1004: "fat_g", 1005: "carb_g", 1079: "fiber_g"}
+
+
+def _search_macros(hit: dict) -> Macros:
+    """Per-100 g macros from a search result, whose nutrients are shaped
+    differently from a full food payload's."""
+    values = {n.get("nutrientId"): n.get("value") for n in hit.get("foodNutrients", [])}
+    kcal = values.get(1008)
+    if kcal is None:
+        kcal = values.get(2048) or values.get(2047) or 0.0
+    return Macros(
+        kcal=kcal,
+        **{field: values.get(nid) or 0.0 for nid, field in _SEARCH_NUTRIENTS.items()},
+    )
+
+
+@dataclass(frozen=True)
+class UsdaChoice:
+    fdc_id: int
+    description: str
+    per_100g: Macros
+    # What 100 g counts as, scored automatically, e.g. "1P + ¼F".
+    points_100g: str
+
+
+def usda_search(query: str, rules: PointRules) -> list[UsdaChoice]:
+    """USDA foods matching `query`, each with what 100 g counts as."""
+    try:
+        hits = usda.search_foods(query, page_size=10)
+    except (RuntimeError, SourceRequestError) as exc:
+        raise UsdaUnavailable(str(exc)) from None
+    choices = []
+    for hit in hits:
+        m = _search_macros(hit)
+        choices.append(
+            UsdaChoice(
+                fdc_id=hit["fdcId"],
+                description=hit["description"],
+                per_100g=m,
+                points_100g=format_points(points_for(m, effective_class(None, m, rules), rules)),
+            )
+        )
+    return choices
+
+
+def create_usda_food(
+    conn: Connection, fdc_id: int, *, counts_as: str, free_role: str | None
+) -> int:
+    """Import a USDA food as unchecked, scored as `counts_as`.
+
+    Raises LabelInputError, writing nothing, when the choice of class is
+    incomplete, and UsdaUnavailable when USDA cannot be reached.
+    """
+    errors = {}
+    if counts_as not in COUNTS_AS:
+        errors["counts_as"] = f"Choose one of: {', '.join(COUNTS_AS)}."
+    elif counts_as == "free" and free_role not in FREE_ROLES:
+        errors["free_role"] = "Say whether this free food is a veg, a sauce, or a beverage."
+    if errors:
+        raise LabelInputError(errors)
+    try:
+        payload = usda.get_food(fdc_id)
+    except (RuntimeError, SourceRequestError) as exc:
+        raise UsdaUnavailable(str(exc)) from None
+    rules = load_rules(conn)
+    role = role_for(counts_as, free_role, usda.parse_macros(payload), rules)
+    try:
+        food_id = usda.import_food(conn, fdc_id, role=role, commit=False)
+        conn.execute(
+            "UPDATE foods SET point_class = ? WHERE id = ?",
+            (_point_class(counts_as), food_id),
+        )
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        if "UNIQUE" in str(exc):
+            raise LabelInputError(
+                {"name": f"There is already a food called {payload['description']!r}."}
+            ) from None
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return food_id

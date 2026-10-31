@@ -74,3 +74,82 @@ def test_free_food_needs_its_kind(client):
     response = client.post("/foods/new", data={**CREPINI, "counts_as": "free"})
     assert response.status_code == 422
     assert "veg, a sauce, or a beverage" in response.text
+
+
+SEARCH_HIT = {
+    "fdcId": 171077,
+    "description": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    "foodNutrients": [
+        {"nutrientId": 1008, "value": 120.0},
+        {"nutrientId": 1003, "value": 22.5},
+        {"nutrientId": 1004, "value": 2.62},
+        {"nutrientId": 1005, "value": 0.0},
+    ],
+}
+
+
+def _fake_usda(monkeypatch, search=None):
+    from test_usda import SAMPLE_PAYLOAD
+    from yolk.sources import usda
+
+    monkeypatch.setattr(usda, "search_foods", search or (lambda q, page_size=10: [SEARCH_HIT]))
+    monkeypatch.setattr(usda, "get_food", lambda fdc_id: SAMPLE_PAYLOAD)
+
+
+def test_new_food_page_has_usda_search(client):
+    assert 'hx-get="/foods/new/usda"' in client.get("/foods/new").text
+
+
+def test_usda_search_lists_points_per_100g(client, monkeypatch):
+    _fake_usda(monkeypatch)
+    text = client.get("/foods/new/usda", params={"q": "chicken"}).text
+    assert "Chicken, broiler or fryers, breast" in text
+    assert "1P + ¼F" in text
+    assert 'name="fdc_id" value="171077"' in text
+
+
+def test_usda_add_sets_class_and_role(client, seeded, monkeypatch):
+    from yolk.db.connection import connect
+
+    _fake_usda(monkeypatch)
+    response = client.post(
+        "/foods/new/usda", data={"fdc_id": "171077", "counts_as": "protein", "free_role": ""},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    food_id = int(response.headers["location"].rsplit("/", 1)[1])
+    conn = connect(seeded[0])
+    row = conn.execute(
+        "SELECT role, point_class, source, verified FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    conn.close()
+    assert tuple(row) == ("protein", "protein", "usda", 0)
+
+
+def test_usda_add_free_without_kind_says_so(client, monkeypatch):
+    _fake_usda(monkeypatch)
+    response = client.post(
+        "/foods/new/usda", data={"fdc_id": "171077", "counts_as": "free", "free_role": ""}
+    )
+    assert response.status_code == 422
+    assert "veg, a sauce, or a beverage" in response.text
+
+
+def test_missing_key_shows_plain_message(client, monkeypatch):
+    def no_key(q, page_size=10):
+        raise RuntimeError("USDA_API_KEY is not set. Add it to .env; get a free key at "
+                           "https://api.data.gov/signup")
+
+    _fake_usda(monkeypatch, search=no_key)
+    response = client.get("/foods/new/usda", params={"q": "chicken"})
+    assert response.status_code == 200
+    assert ".env" in response.text
+    assert "Traceback" not in response.text
+
+
+def test_blank_usda_query_lists_nothing(client, monkeypatch):
+    def must_not_search(q, page_size=10):
+        raise AssertionError("searched with a blank query")
+
+    _fake_usda(monkeypatch, search=must_not_search)
+    assert client.get("/foods/new/usda", params={"q": "  "}).status_code == 200

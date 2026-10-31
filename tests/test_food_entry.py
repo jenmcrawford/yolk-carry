@@ -138,3 +138,66 @@ def test_create_rejects_invalid_input(db):
         create_label_food(db, _with(serving_g=0))
     assert "serving_g" in caught.value.errors
     assert db.execute("SELECT count(*) AS n FROM foods").fetchone()["n"] == 0
+
+
+SEARCH_HIT = {
+    "fdcId": 171077,
+    "description": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    "foodNutrients": [
+        {"nutrientId": 1008, "value": 120.0},
+        {"nutrientId": 1003, "value": 22.5},
+        {"nutrientId": 1004, "value": 2.62},
+        {"nutrientId": 1005, "value": 0.0},
+    ],
+}
+
+
+def _fake_usda(monkeypatch, *, search=None):
+    from yolk.sources import usda
+    from test_usda import SAMPLE_PAYLOAD
+
+    monkeypatch.setattr(usda, "search_foods", search or (lambda q, page_size=10: [SEARCH_HIT]))
+    monkeypatch.setattr(usda, "get_food", lambda fdc_id: SAMPLE_PAYLOAD)
+
+
+def test_usda_search_lists_points_per_100g(db, monkeypatch):
+    from yolk.food_entry import usda_search
+
+    _fake_usda(monkeypatch)
+    [choice] = usda_search("chicken", load_rules(db))
+    assert choice.fdc_id == 171077
+    assert choice.per_100g.protein_g == 22.5
+    assert choice.points_100g == "1P + ¼F"
+
+
+def test_usda_unavailable_wraps_missing_key(db, monkeypatch):
+    from yolk.food_entry import UsdaUnavailable, usda_search
+
+    def no_key(q, page_size=10):
+        raise RuntimeError("USDA_API_KEY is not set. Add it to .env")
+
+    _fake_usda(monkeypatch, search=no_key)
+    with pytest.raises(UsdaUnavailable, match=".env"):
+        usda_search("chicken", load_rules(db))
+
+
+def test_create_usda_food_sets_class_and_role(db, monkeypatch):
+    from yolk.food_entry import create_usda_food
+
+    _fake_usda(monkeypatch)
+    food_id = create_usda_food(db, 171077, counts_as="protein", free_role=None)
+    row = db.execute(
+        "SELECT role, point_class, source, source_ref, verified FROM foods WHERE id = ?",
+        (food_id,),
+    ).fetchone()
+    assert tuple(row) == ("protein", "protein", "usda", "171077", 0)
+
+
+def test_create_usda_food_free_needs_kind(db, monkeypatch):
+    from yolk.food_entry import create_usda_food
+
+    _fake_usda(monkeypatch)
+    with pytest.raises(LabelInputError) as caught:
+        create_usda_food(db, 171077, counts_as="free", free_role=None)
+    assert "free_role" in caught.value.errors
+    assert db.execute("SELECT count(*) AS n FROM foods").fetchone()["n"] == 0

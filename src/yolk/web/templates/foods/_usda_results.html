@@ -1,0 +1,44 @@
+{# Needs: query (str). Optional: choices (list[UsdaChoice]), unavailable (str),
+   counts_as and free_roles (option lists). #}
+<div class="usda-results" id="usda-results">
+  {% if unavailable %}
+  <p class="entry-error">USDA could not be searched: {{ unavailable }}</p>
+  {% elif choices %}
+  <table>
+    <thead>
+      <tr>
+        <th>Food</th><th class="num">kcal</th><th class="num">Protein</th>
+        <th class="num">Fat</th><th class="num">Carbs</th><th>100 g counts as</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in choices %}
+      <tr>
+        <td>{{ c.description }} <span class="muted">FDC {{ c.fdc_id }}</span></td>
+        <td class="num">{{ "%.0f"|format(c.per_100g.kcal) }}</td>
+        <td class="num">{{ "%.1f"|format(c.per_100g.protein_g) }}</td>
+        <td class="num">{{ "%.1f"|format(c.per_100g.fat_g) }}</td>
+        <td class="num">{{ "%.1f"|format(c.per_100g.carb_g) }}</td>
+        <td>{{ c.points_100g }}</td>
+        <td class="actions">
+          <form method="post" action="/foods/new/usda">
+            <input type="hidden" name="fdc_id" value="{{ c.fdc_id }}">
+            <select name="counts_as" aria-label="Counts as">
+              {% for value in counts_as %}<option value="{{ value }}">{{ "automatic" if value == "auto" else value }}</option>{% endfor %}
+            </select>
+            <select name="free_role" aria-label="Free food kind">
+              <option value="">—</option>
+              {% for value in free_roles %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+            </select>
+            <button type="submit">Add</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Macros per 100 g. Added foods are unchecked until you check them.</p>
+  {% elif query %}
+  <p>USDA has nothing matching “{{ query }}”.</p>
+  {% endif %}
+</div>
