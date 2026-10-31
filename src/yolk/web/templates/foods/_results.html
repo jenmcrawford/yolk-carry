@@ -21,7 +21,7 @@
     {% for food in foods %}
       <tr>
         <td>
-          {{ food.name }}{% if food.brand %} <span class="muted">{{ food.brand }}</span>{% endif %}
+          <a href="/foods/{{ food.id }}">{{ food.name }}</a>{% if food.brand %} <span class="muted">{{ food.brand }}</span>{% endif %}
           {% if not food.verified %}<span class="badge">unchecked</span>{% endif %}
         </td>
         <td>{{ food.role }}</td>

@@ -14,7 +14,9 @@ from dataclasses import dataclass
 
 from yolk.db import Connection
 from yolk.errors import SourceRequestError, YolkError
-from yolk.foods import create_item
+from datetime import date
+
+from yolk.foods import FoodSummary, create_item, food_summary
 from yolk.macros import Macros
 from yolk.points import (
     PointRules,
@@ -26,7 +28,10 @@ from yolk.points import (
     main_type,
     one_point_from,
     points_for,
+    Portion,
+    portions,
 )
+from yolk.units import MASS_UNITS
 from yolk.sources import usda
 
 COUNTS_AS = ("auto", "fat", "carb", "protein", "veggie", "free")
@@ -321,3 +326,187 @@ def create_usda_food(
         raise
     conn.commit()
     return food_id
+
+
+# --- Checking and fixing a food ------------------------------------------------
+
+class NotEditable(YolkError):
+    """A recipe's macros come from its components, so it is not edited here."""
+
+
+@dataclass(frozen=True)
+class FoodDetail:
+    summary: FoodSummary
+    source: str
+    source_ref: str | None
+    notes: str | None
+    verified_on: str | None
+    # Every source's portion, the coach's first.
+    portions: list[Portion]
+    sugar_alcohol_g_100g: float | None
+
+
+def food_detail(conn: Connection, food_id: int) -> FoodDetail:
+    summary = food_summary(conn, food_id)
+    row = conn.execute(
+        "SELECT source, source_ref, notes, verified_on, sugar_alcohol_g_100g "
+        "FROM foods WHERE id = ?",
+        (food_id,),
+    ).fetchone()
+    found = portions(conn, food_id)
+    return FoodDetail(
+        summary=summary,
+        source=row["source"],
+        source_ref=row["source_ref"],
+        notes=row["notes"],
+        verified_on=row["verified_on"],
+        portions=sorted(found, key=lambda p: p.source != "coach"),
+        sugar_alcohol_g_100g=row["sugar_alcohol_g_100g"],
+    )
+
+
+def mark_checked(conn: Connection, food_id: int) -> None:
+    """Record that the food was checked against its package today."""
+    conn.execute(
+        "UPDATE foods SET verified = 1, verified_on = ? WHERE id = ?",
+        (date.today().isoformat(), food_id),
+    )
+    conn.commit()
+
+
+@dataclass(frozen=True)
+class FoodEdit:
+    """A food's stored figures, per 100 g, as corrected."""
+
+    name: str
+    brand: str
+    kcal: float | None
+    fat_g: float | None
+    carb_g: float | None
+    fiber_g: float | None
+    sugar_alcohol_g: float | None
+    protein_g: float | None
+    counts_as: str
+    free_role: str | None
+    # The food's own units, replacing what it had.
+    units: dict[str, float]
+    # Jen's own portion; None removes it. The coach's is never touched.
+    manual_portion: tuple[float, str] | None
+
+
+def _validate_edit(conn: Connection, food_id: int, edit: FoodEdit) -> dict[str, str]:
+    as_label = LabelInput(
+        name=edit.name, brand=edit.brand, serving_g=100.0, kcal=edit.kcal,
+        fat_g=edit.fat_g, carb_g=edit.carb_g, fiber_g=edit.fiber_g,
+        sugar_alcohol_g=edit.sugar_alcohol_g, protein_g=edit.protein_g,
+        counts_as=edit.counts_as, free_role=edit.free_role,
+    )
+    errors = validate(as_label)
+    # validate() speaks of "the serving"; here the serving is 100 g.
+    for field, message in errors.items():
+        errors[field] = message.replace("100 g serving", "100 g")
+
+    bad = [unit for unit, grams in edit.units.items() if not unit.strip() or grams <= 0]
+    if bad:
+        errors["units"] = f"Each unit needs a name and more than 0 g: {', '.join(bad)}."
+    removed = {
+        row["unit"]
+        for row in conn.execute("SELECT unit FROM food_units WHERE food_id = ?", (food_id,))
+    } - set(edit.units)
+    in_use = []
+    for unit in sorted(removed):
+        plan = conn.execute(
+            "SELECT p.name FROM day_plan_entries e JOIN day_plans p ON p.id = e.day_plan_id "
+            "WHERE e.food_id = ? AND e.unit = ? LIMIT 1",
+            (food_id, unit),
+        ).fetchone()
+        portion = conn.execute(
+            "SELECT source FROM point_portions WHERE food_id = ? AND unit = ? "
+            "AND source <> 'manual' LIMIT 1",
+            (food_id, unit),
+        ).fetchone()
+        if plan is not None:
+            in_use.append(f"{unit} (used in plan {plan['name']!r})")
+        elif portion is not None:
+            in_use.append(f"{unit} (the {portion['source']} portion uses it)")
+    if in_use:
+        errors["units"] = "Cannot remove a unit that is in use: " + ", ".join(in_use) + "."
+    if edit.manual_portion is not None:
+        qty, unit = edit.manual_portion
+        if qty <= 0:
+            errors["manual_portion"] = "Your portion must be more than 0."
+        elif unit not in edit.units and unit not in MASS_UNITS:
+            errors["manual_portion"] = (
+                f"{unit!r} is not one of this food's units; add it to the units first."
+            )
+    return errors
+
+
+def update_food(conn: Connection, food_id: int, edit: FoodEdit) -> None:
+    """Correct a food everywhere it is used. A checked food becomes unchecked,
+    since what was checked is no longer what is stored."""
+    row = conn.execute("SELECT kind FROM foods WHERE id = ?", (food_id,)).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+    if row["kind"] == "recipe":
+        raise NotEditable("A recipe's macros come from its components; edit those instead.")
+    errors = _validate_edit(conn, food_id, edit)
+    if errors:
+        raise LabelInputError(errors)
+
+    rules = load_rules(conn)
+    m = Macros(
+        kcal=edit.kcal, fat_g=edit.fat_g, carb_g=edit.carb_g, protein_g=edit.protein_g,
+        fiber_g=edit.fiber_g or 0.0, sugar_alcohol_g=edit.sugar_alcohol_g or 0.0,
+    )
+    try:
+        conn.execute(
+            "UPDATE foods SET name = ?, brand = ?, role = ?, point_class = ?, "
+            "kcal_100g = ?, fat_g_100g = ?, carb_g_100g = ?, fiber_g_100g = ?, "
+            "sugar_alcohol_g_100g = ?, protein_g_100g = ?, verified = 0, "
+            "verified_on = NULL WHERE id = ?",
+            (
+                edit.name.strip(), edit.brand.strip(),
+                role_for(edit.counts_as, edit.free_role, m, rules),
+                _point_class(edit.counts_as),
+                edit.kcal, edit.fat_g, edit.carb_g, edit.fiber_g,
+                edit.sugar_alcohol_g, edit.protein_g, food_id,
+            ),
+        )
+        conn.execute(
+            "DELETE FROM point_portions WHERE food_id = ? AND source = 'manual'", (food_id,)
+        )
+        keep = list(edit.units)
+        conn.execute(
+            f"DELETE FROM food_units WHERE food_id = ? "
+            f"AND unit NOT IN ({', '.join('?' for _ in keep) or 'NULL'})",
+            (food_id, *keep),
+        )
+        for unit, grams in edit.units.items():
+            conn.execute(
+                "INSERT INTO food_units (food_id, unit, grams) VALUES (?, ?, ?) "
+                "ON CONFLICT (food_id, unit) DO UPDATE SET grams = excluded.grams",
+                (food_id, unit.strip(), grams),
+            )
+        if edit.manual_portion is not None:
+            from yolk.points import food_points
+            from yolk.units import to_grams
+
+            qty, unit = edit.manual_portion
+            grams = to_grams(conn, food_id, qty, unit)
+            add_portion(
+                conn, food_id, source="manual", qty=qty, unit=unit,
+                claimed=format_points(food_points(conn, food_id, grams, rules)),
+                commit=False,
+            )
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        if "UNIQUE" in str(exc) and "foods" in str(exc):
+            raise LabelInputError(
+                {"name": f"There is already a food called {edit.name.strip()!r}."}
+            ) from None
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()

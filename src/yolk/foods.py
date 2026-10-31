@@ -183,18 +183,36 @@ def search_library(conn: Connection, query: str) -> list[FoodSummary]:
     macros were never computed is returned with per_100g=None rather than
     raising, so one unfinished recipe cannot break the whole list.
     """
-    from yolk.points import load_rules
-
-    rules = load_rules(conn)
     pattern = _like_pattern(query.strip().lower())
     rows = conn.execute(
-        "SELECT id, name, brand, kind, role, verified, point_class, kcal_100g, "
-        "protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g FROM foods "
+        f"SELECT {_SUMMARY_COLUMNS} FROM foods "
         "WHERE lower(name) LIKE ? ESCAPE '\\' OR lower(brand) LIKE ? ESCAPE '\\' "
         "ORDER BY lower(name), lower(brand), id",
         (pattern, pattern),
     ).fetchall()
+    return _summaries(conn, rows)
 
+
+def food_summary(conn: Connection, food_id: int) -> FoodSummary:
+    """One food, summarised as search_library would list it."""
+    row = conn.execute(
+        f"SELECT {_SUMMARY_COLUMNS} FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+    return _summaries(conn, [row])[0]
+
+
+_SUMMARY_COLUMNS = (
+    "id, name, brand, kind, role, verified, point_class, kcal_100g, "
+    "protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g"
+)
+
+
+def _summaries(conn: Connection, rows: list[sqlite3.Row]) -> list[FoodSummary]:
+    from yolk.points import load_rules
+
+    rules = load_rules(conn)
     units: dict[int, list[tuple[str, float]]] = {}
     for row in conn.execute(
         "SELECT food_id, unit, grams FROM food_units ORDER BY food_id, unit"
