@@ -267,16 +267,11 @@ def _food_points(
 
 
 def _main_type(conn: Connection, food_id: int, per_100g: Points) -> str | None:
-    """The type one point of this food is measured in, or None for a free food."""
     row = conn.execute(
         "SELECT kind, point_class FROM foods WHERE id = ?", (food_id,)
     ).fetchone()
-    if row["kind"] == "item" and row["point_class"] == "free":
-        return None
-    if row["kind"] == "item" and row["point_class"] is not None:
-        return row["point_class"]
-    # Automatic, or a recipe: whichever type it carries most of.
-    return max(POINT_TYPES, key=lambda name: getattr(per_100g, name))
+    # A recipe's own class is ignored, as in food_points.
+    return main_type(row["point_class"] if row["kind"] == "item" else None, per_100g)
 
 
 def _quarter_units(grams: float, grams_per_unit: float) -> float:
@@ -284,26 +279,63 @@ def _quarter_units(grams: float, grams_per_unit: float) -> float:
     return max(round(grams / grams_per_unit * 4) / 4, 0.25)
 
 
-def _display_unit(conn: Connection, food_id: int, grams: float) -> tuple[str, float]:
-    """The food's own unit whose nearest quarter lands closest to `grams`.
+def _units_of(conn: Connection, food_id: int) -> list[tuple[str, float]]:
+    """(unit, grams) for each of the food's own units, or ounces if it has none."""
+    own = own_units(conn, food_id)
+    if not own:
+        return [("oz", MASS_UNITS["oz"])]
+    return [(unit, to_grams(conn, food_id, 1.0, unit)) for unit in own]
+
+
+def _best_unit(units: list[tuple[str, float]], grams: float) -> tuple[str, float]:
+    """The unit whose nearest quarter lands closest to `grams`.
 
     A quarter cup is the smallest step in cups, so a one-point portion of
     27 g reads as 1¾ tbsp, not ¼ cup. Ties go to the unit listed first (the
-    food's default display unit). A food with no units of its own uses ounces.
+    food's default display unit).
     """
-    own = own_units(conn, food_id)
-    if not own:
-        return "oz", MASS_UNITS["oz"]
-    candidates = [(unit, to_grams(conn, food_id, 1.0, unit)) for unit in own]
-    return min(
-        candidates,
-        key=lambda c: abs(_quarter_units(grams, c[1]) * c[1] - grams),
-    )
+    return min(units, key=lambda u: abs(_quarter_units(grams, u[1]) * u[1] - grams))
 
 
 def format_qty(qty: float) -> str:
     """3.5 -> '3½', 0.25 -> '¼', 4.0 -> '4'."""
     return _fraction(_quarters(qty))
+
+
+def main_type(point_class: str | None, per_100g: Points) -> str | None:
+    """The type one point of a food is measured in, or None for a free food.
+
+    An explicit class decides; otherwise (automatic, or a recipe) it is
+    whichever type the food carries most of.
+    """
+    if point_class == "free":
+        return None
+    if point_class is not None:
+        return point_class
+    return max(POINT_TYPES, key=lambda name: getattr(per_100g, name))
+
+
+def one_point_from(
+    per_100g: Points, main: str | None, units: list[tuple[str, float]]
+) -> OnePoint | None:
+    """One point of `main`, in whichever of `units` measures it best.
+
+    Pure, so a label can be previewed before the food exists. Points are
+    linear in grams, so per-100 g points scale to any portion.
+    """
+    if main is None or getattr(per_100g, main) <= 0:
+        return None
+    exact_grams = 100.0 / getattr(per_100g, main)
+    unit, grams_per_unit = _best_unit(units, exact_grams)
+    qty = _quarter_units(exact_grams, grams_per_unit)
+    grams = qty * grams_per_unit
+    points = per_100g.scale(grams / 100.0)
+    return OnePoint(
+        qty=qty,
+        unit=unit,
+        grams=grams,
+        label=f"{format_qty(qty)} {unit} ({grams:.0f} g) → {format_points(points)}",
+    )
 
 
 def one_point(conn: Connection, food_id: int, rules: PointRules) -> OnePoint | None:
@@ -313,19 +345,8 @@ def one_point(conn: Connection, food_id: int, rules: PointRules) -> OnePoint | N
     no amount of olive oil that is one carb.
     """
     per_100g = food_points(conn, food_id, 100.0, rules)
-    main = _main_type(conn, food_id, per_100g)
-    if main is None or getattr(per_100g, main) <= 0:
-        return None
-    exact_grams = 100.0 / getattr(per_100g, main)
-    unit, grams_per_unit = _display_unit(conn, food_id, exact_grams)
-    qty = _quarter_units(exact_grams, grams_per_unit)
-    grams = qty * grams_per_unit
-    points = food_points(conn, food_id, grams, rules)
-    return OnePoint(
-        qty=qty,
-        unit=unit,
-        grams=grams,
-        label=f"{format_qty(qty)} {unit} ({grams:.0f} g) → {format_points(points)}",
+    return one_point_from(
+        per_100g, _main_type(conn, food_id, per_100g), _units_of(conn, food_id)
     )
 
 
