@@ -20,7 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from yolk.config import database_path
 from yolk.web.deps import SetupRequired
-from yolk.web.routes import drafts, foods, people, plans
+from yolk.web.routes import drafts, foods, people, plans, settings
 from yolk.web.templating import templates
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -77,6 +77,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     app.include_router(people.router)
     app.include_router(foods.router)
     app.include_router(drafts.router)
+    app.include_router(settings.router)
 
     @app.get("/", include_in_schema=False)
     def home() -> RedirectResponse:
