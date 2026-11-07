@@ -316,3 +316,24 @@ def test_racc_measure_unit_still_yields_to_a_real_modifier(db, monkeypatch):
     ).fetchone()
     assert row is not None
     assert row["grams"] == pytest.approx(40.0)
+
+
+def test_parse_macros_falls_back_to_atwater_energy():
+    """Foundation foods often report energy only as Atwater factors (2047,
+    2048), not 1008. That is still calories, so it imports."""
+    payload = {
+        "description": "Nuts, almonds, whole, raw",
+        "foodNutrients": [
+            {"nutrient": {"id": 2047}, "amount": 590.0},
+            {"nutrient": {"id": 2048}, "amount": 583.6},
+            {"nutrient": {"id": 1004}, "amount": 51.1},
+        ],
+    }
+    assert usda.parse_macros(payload).kcal == pytest.approx(583.6)
+
+
+def test_import_food_can_defer_its_commit(db, monkeypatch):
+    monkeypatch.setattr(usda, "get_food", lambda fdc_id: SAMPLE_PAYLOAD)
+    usda.import_food(db, 171077, role="protein", commit=False)
+    db.rollback()
+    assert db.execute("SELECT COUNT(*) AS n FROM foods").fetchone()["n"] == 0

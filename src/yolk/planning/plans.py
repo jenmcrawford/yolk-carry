@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from yolk.db import Connection
 from yolk.errors import YolkError
 from yolk.macros import Macros
-from yolk.people import slot_names
+from yolk.people import slot_allotments, slot_names
 from yolk.planning.evaluate import DayEvaluation, SlotEvaluation, evaluate
+from yolk.points import Points
 from yolk.units import units_for
 
 
@@ -44,6 +45,8 @@ class PlanSlot:
     name: str
     # None when nothing is planned in this slot yet.
     slot: SlotEvaluation | None
+    # The meal's point allotment; None under a macros profile.
+    allotment: Points | None = None
 
 
 def get_plan(conn: Connection, plan_id: int) -> PlanHeader:
@@ -114,13 +117,16 @@ def plan_slots(
     That is each slot template of the plan's profile, filled or empty, plus
     any slot number holding entries without a template, named "Slot N".
     """
-    names = slot_names(conn, get_plan(conn, plan_id).profile_id)
+    profile_id = get_plan(conn, plan_id).profile_id
+    names = slot_names(conn, profile_id)
+    allotments = slot_allotments(conn, profile_id)
     evaluated = {slot.slot_no: slot for slot in evaluation.slots}
     return [
         PlanSlot(
             slot_no=slot_no,
             name=names.get(slot_no, f"Slot {slot_no}"),
             slot=evaluated.get(slot_no),
+            allotment=allotments.get(slot_no),
         )
         for slot_no in sorted(names.keys() | evaluated.keys())
     ]
@@ -134,6 +140,7 @@ def compare(draft: DayEvaluation, saved: DayEvaluation) -> Macros:
         fat_g=draft.totals.fat_g - saved.totals.fat_g,
         carb_g=draft.totals.carb_g - saved.totals.carb_g,
         fiber_g=draft.totals.fiber_g - saved.totals.fiber_g,
+        sugar_alcohol_g=draft.totals.sugar_alcohol_g - saved.totals.sugar_alcohol_g,
     )
 
 

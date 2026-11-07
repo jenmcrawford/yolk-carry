@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ form.name }} · yolk{% endblock %}
+{% macro field(name, label, hint="", text=False) -%}
+<div class="field{% if errors[name] %} has-error{% endif %}" id="field-{{ name }}">
+  <label for="{{ name }}">{{ label }}</label>
+  <input id="{{ name }}" name="{{ name }}" value="{{ form[name] }}"{% if not text %} inputmode="decimal"{% endif %}>
+  {% if hint %}<span class="muted">{{ hint }}</span>{% endif %}
+  {% if errors[name] %}<p class="entry-error">{{ errors[name] }}</p>{% endif %}
+</div>
+{%- endmacro %}
+{% block content %}
+<h1>Edit {{ form.name }}</h1>
+<p class="muted">Figures here are per 100 g, as stored. Saving changes this food everywhere it is used and marks it unchecked. The coach's portion is never changed here.</p>
+<form class="label-form" method="post" action="/foods/{{ food_id }}/edit">
+  <section class="totals">
+    <h2>Food</h2>
+    {{ field("name", "Name", text=True) }}
+    {{ field("brand", "Brand", hint="optional", text=True) }}
+    <div class="field{% if errors.counts_as %} has-error{% endif %}" id="field-counts_as">
+      <label for="counts_as">Counts as</label>
+      <select id="counts_as" name="counts_as">
+        {% for value in counts_as %}<option value="{{ value }}"{% if form.counts_as == value %} selected{% endif %}>{{ "automatic (its biggest macro)" if value == "auto" else value }}</option>{% endfor %}
+      </select>
+      {% if errors.counts_as %}<p class="entry-error">{{ errors.counts_as }}</p>{% endif %}
+    </div>
+    <div class="field{% if errors.free_role %} has-error{% endif %}" id="field-free_role">
+      <label for="free_role">Free food kind</label>
+      <select id="free_role" name="free_role">
+        <option value="">—</option>
+        {% for value in free_roles %}<option value="{{ value }}"{% if form.free_role == value %} selected{% endif %}>{{ value }}</option>{% endfor %}
+      </select>
+      <span class="muted">only for free foods</span>
+      {% if errors.free_role %}<p class="entry-error">{{ errors.free_role }}</p>{% endif %}
+    </div>
+  </section>
+  <section class="totals">
+    <h2>Per 100 g</h2>
+    {{ field("kcal", "Calories") }}
+    {{ field("fat_g", "Fat (g)") }}
+    {{ field("carb_g", "Total carbs (g)") }}
+    {{ field("fiber_g", "Fiber (g)", hint="blank if not known") }}
+    {{ field("sugar_alcohol_g", "Sugar alcohols (g)", hint="optional") }}
+    {{ field("protein_g", "Protein (g)") }}
+  </section>
+  <section class="totals">
+    <h2>Units and your portion</h2>
+    <div class="field{% if errors.units %} has-error{% endif %}" id="field-units">
+      <label for="units">Units</label>
+      <textarea id="units" name="units" rows="4">{{ form.units }}</textarea>
+      <span class="muted">one per line, e.g. tbsp = 15</span>
+      {% if errors.units %}<p class="entry-error">{{ errors.units }}</p>{% endif %}
+    </div>
+    {{ field("manual_qty", "Your portion: amount", hint="blank to use the coach's") }}
+    {{ field("manual_unit", "Your portion: unit", text=True) }}
+    {% if errors.manual_portion %}<p class="entry-error">{{ errors.manual_portion }}</p>{% endif %}
+  </section>
+  <button type="submit">Save changes</button>
+  <a class="button" href="/foods/{{ food_id }}">Cancel</a>
+</form>
+{% endblock %}

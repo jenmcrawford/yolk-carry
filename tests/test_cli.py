@@ -113,3 +113,54 @@ def test_serve_defaults_to_port_8000(db_path, monkeypatch):
     )
     main(["serve"])
     assert calls == [{"host": "127.0.0.1", "port": 8000}]
+
+
+def test_seed_points_command_reports(db_path, capsys):
+    from yolk.db.connection import create_schema
+    from yolk.seed import seed_keto_plan_a
+
+    conn = connect(db_path)
+    create_schema(conn)
+    seed_keto_plan_a(conn)
+    conn.close()
+
+    assert main(["seed", "points"]) == 0
+    out = capsys.readouterr().out
+    assert "Active recovery" in out
+    assert "created" in out and "attached" in out and "flagged" in out
+
+
+def test_seed_points_twice_says_so(db_path, capsys):
+    main(["init", "--seed"])
+    capsys.readouterr()
+    assert main(["seed", "points"]) == 0
+    assert "already" in capsys.readouterr().out
+
+
+def test_init_seed_loads_both(db_path):
+    assert main(["init", "--seed"]) == 0
+    conn = connect(db_path)
+    names = {row["name"] for row in conn.execute("SELECT name FROM macro_profiles")}
+    assert names == {"training", "Active recovery"}
+    conn.close()
+
+
+def test_import_foods_command(db_path, tmp_path, capsys):
+    from yolk.inbox import INBOX_COLUMNS
+
+    main(["init"])
+    good = tmp_path / "good.csv"
+    good.write_text(
+        ",".join(INBOX_COLUMNS) + "\n"
+        "Chicken Birria,On The Street Foods,Costco,4 oz (113 g),113,150,7,1,,,20,protein,,,label\n"
+        "Bone broth,Kettle & Fire,Sprouts,1 cup,240,40,0,0,0,,9,free:beverage,cup,240,\n",
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(["import-foods", str(good)]) == 0
+    assert "Imported 2, skipped 0" in capsys.readouterr().out
+
+    bad = tmp_path / "bad.csv"
+    bad.write_text(",".join(INBOX_COLUMNS) + "\nOops,,,,,,,,,,,,,,\n", encoding="utf-8")
+    assert main(["import-foods", str(bad)]) == 1
+    assert "line 2" in capsys.readouterr().err

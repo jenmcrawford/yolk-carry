@@ -1,3 +1,5 @@
+import pytest
+
 from yolk.foods import create_item, search_library
 from yolk.macros import Macros
 
@@ -62,3 +64,32 @@ def test_a_recipe_without_computed_macros_is_listed_without_them(db):
     assert food.kind == "recipe"
     assert food.per_100g is None
     assert food.units == []
+
+
+def _coach_chicken(db, protein_g):
+    from yolk.points import add_portion
+
+    food_id = create_item(
+        db, name="Chicken breast", role="protein",
+        macros=Macros(kcal=120, protein_g=protein_g, fat_g=1),
+    )
+    add_portion(db, food_id, source="coach", qty=4, unit="oz", claimed="1P")
+    return search_library(db, "chicken")[0]
+
+
+def test_summary_flags_coach_disagreement(db):
+    food = _coach_chicken(db, protein_g=15)
+    assert food.coach.claimed == "1P"
+    assert food.coach_points.protein == pytest.approx(4 * 28.349523125 * 0.15 / 25)
+    assert food.disagrees is True
+
+
+def test_summary_agrees_with_coach_within_a_quarter(db):
+    assert _coach_chicken(db, protein_g=25).disagrees is False
+
+
+def test_summary_carries_points_fields(db):
+    food = _coach_chicken(db, protein_g=25)
+    assert food.point_class is None
+    assert food.one_point.unit == "oz"
+    assert food.fiber_known is True

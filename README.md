@@ -35,6 +35,8 @@ into an empty database.
 |---|---|
 | `uv run python -m yolk init [--seed]` | Create the database, apply migrations, optionally seed |
 | `uv run python -m yolk migrate` | Apply pending migrations |
+| `uv run python -m yolk seed points` | Add the coach's point system (Active recovery day and food lists) to an existing database |
+| `uv run python -m yolk import-foods FILE` | Add foods from a receipt inbox CSV ([docs/food-inbox.md](docs/food-inbox.md)) |
 | `uv run python -m yolk export [--out DIR]` | Write every table to JSON |
 | `uv run python -m yolk import [--from DIR]` | Load JSON into an empty database |
 | `uv run python -m yolk serve [--port N]` | Run the web app at http://127.0.0.1:8000 |
@@ -67,3 +69,41 @@ The **Foods** page searches the food library by name or brand.
 
 After updating to this version, run `uv run python -m yolk migrate` once. Drafts
 need migration 2, and the app says so until it has run.
+
+## Planning on points
+
+Your coach's point system turns grams into points: one FAT is 15 g of fat, one CARB
+25 g of carbs, one PROTEIN 25 g of protein, and one VEGGIE 10 g of carbs from a
+vegetable. Free foods count nothing. Points are never typed in; they are worked out
+from each food's macros every time, so a corrected label shows up everywhere.
+
+`uv run python -m yolk seed points` adds the **Active recovery** profile, its six
+meals and their allotments (7:00 is 1F 1C 1P, and so on), and the coach's food lists.
+`init --seed` on a new database does this too.
+
+- **Foods** shows how much of each food is one point ("4 oz (113 g) → 1P + ¼F") and the
+  coach's portion beside it. Where the macros disagree with the coach, the line is
+  flagged ("coach says 1F, macros say ½F"); the coach's portion is never changed.
+  Adding a food to a meal uses the coach's portion.
+- Each meal shows its target, what is planned, and a hint such as "½C short" when a
+  point type is off by more than a quarter. Hints never fail the day.
+- The day is judged by macros, as before, against targets the points add up to:
+  90 g fat, 85 g carbs, 150 g protein, 1,750 kcal. On a points day, calories are
+  counted from grams (9/4/4), with a ±5% window; label calories are shown beside them.
+- **Settings** switches carbs between total (the default, as the coach's portions
+  are written) and net (minus fiber and sugar alcohols).
+
+After updating to this version, run `uv run python -m yolk migrate` once (migration 3),
+then `uv run python -m yolk seed points`.
+
+## Adding foods
+
+**Foods → New food** adds a food two ways. **From USDA**: search, then **Add** with what
+it counts as. **From a label**: type the label per serving, as printed; the points show
+before you save ("4 pancake (116 g) counts as 1C + ¾P + ¼F"). Either way the food is
+**unchecked** until you open its page, compare it with the package, and **Mark checked**.
+**Edit** on a food's page fixes its figures everywhere it is used, and lets you set your own
+portion beside the coach's.
+
+For a whole haul, hand the receipt to Claude in a session and import the CSV it writes:
+see [docs/food-inbox.md](docs/food-inbox.md).

@@ -17,7 +17,7 @@ from yolk.errors import YolkError
 from yolk.planning import drafts
 from yolk.planning.evaluate import evaluate
 from yolk.planning.plans import PlanHeader, compare, entry_units, get_plan, plan_slots
-from yolk.units import default_portion
+from yolk.points import entry_default
 from yolk.web.deps import ConnDep, Viewer, ViewerDep, is_htmx, owned_plan
 from yolk.web.templating import templates
 
@@ -130,7 +130,7 @@ def add_food(
 ):
     draft = owned_plan(conn, viewer, draft_id, status="draft")
     _require_food(conn, food_id)
-    qty, unit = default_portion(conn, food_id)
+    qty, unit = entry_default(conn, food_id)
     drafts.add_entry_to_draft(
         conn, draft.id, slot_no=slot_no, food_id=food_id, qty=qty, unit=unit
     )
@@ -168,7 +168,7 @@ def swap_food(
     draft = owned_plan(conn, viewer, draft_id, status="draft")
     slot_no = _slot_of_entry(conn, draft, entry_id)
     _require_food(conn, food_id)
-    qty, unit = default_portion(conn, food_id)
+    qty, unit = entry_default(conn, food_id)
     drafts.replace_entry_food(conn, entry_id, food_id, qty=qty, unit=unit)
     return _after_edit(request, conn, viewer, draft, slot_no)
 

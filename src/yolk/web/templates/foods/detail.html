@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ food.summary.name }} · yolk{% endblock %}
+{% block content %}
+{% set s = food.summary %}
+<h1>{{ s.name }}{% if s.brand %} <span class="muted">{{ s.brand }}</span>{% endif %}</h1>
+<p class="muted">
+  {{ "Recipe" if s.kind == "recipe" else "Food" }} · {{ s.role }}
+  · counts as {{ s.point_class or "automatic" }}
+  · {% if s.verified %}checked{% if food.verified_on %} {{ food.verified_on }}{% endif %}{% else %}<span class="badge">unchecked</span>{% endif %}
+</p>
+<div class="draft-actions">
+  {% if not s.verified %}
+  <form method="post" action="/foods/{{ s.id }}/check">
+    <button type="submit">Mark checked</button>
+  </form>
+  {% endif %}
+  {% if s.kind == "item" %}<a class="button" href="/foods/{{ s.id }}/edit">Edit</a>{% endif %}
+</div>
+
+<section class="totals">
+  <h2>Points</h2>
+  {% if s.one_point %}<p>One point: {{ s.one_point.label }}</p>
+  {% elif s.point_class == "free" %}<p>Free: counts no points.</p>
+  {% else %}<p class="muted">No one-point portion.</p>{% endif %}
+  {% if food.portions %}
+  <table>
+    <thead><tr><th>Portion</th><th>Says</th><th>Source</th></tr></thead>
+    <tbody>
+    {% for p in food.portions %}
+      <tr>
+        <td>{{ p.qty|qty }} {{ p.unit }} ({{ "%.0f"|format(p.grams) }} g)</td>
+        <td>{{ p.claimed }}</td>
+        <td>{{ p.source }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if s.coach %}
+  <p>Coach: {{ s.coach.qty|qty }} {{ s.coach.unit }} = {{ s.coach.claimed }}{% if s.disagrees %}<span class="flag">coach says {{ s.coach.claimed }}, macros say {{ s.coach_points|points }}</span>{% endif %}</p>
+  {% endif %}
+  {% if not s.fiber_known %}<p class="muted">Fiber is not recorded, so under net carbs this food counts its total carbs.</p>{% endif %}
+</section>
+
+<section class="totals">
+  <h2>Per 100 g</h2>
+  {% if s.per_100g %}
+  <table>
+    <tbody>
+      <tr><th scope="row">Calories</th><td class="num">{{ "%.0f"|format(s.per_100g.kcal) }}</td></tr>
+      <tr><th scope="row">Fat</th><td class="num">{{ "%.1f"|format(s.per_100g.fat_g) }} g</td></tr>
+      <tr><th scope="row">Carbs</th><td class="num">{{ "%.1f"|format(s.per_100g.carb_g) }} g</td></tr>
+      <tr><th scope="row">Fiber</th><td class="num">{{ "%.1f g"|format(s.per_100g.fiber_g) if s.fiber_known else "not recorded" }}</td></tr>
+      <tr><th scope="row">Sugar alcohols</th><td class="num">{{ "%.1f g"|format(food.sugar_alcohol_g_100g) if food.sugar_alcohol_g_100g is not none else "—" }}</td></tr>
+      <tr><th scope="row">Protein</th><td class="num">{{ "%.1f"|format(s.per_100g.protein_g) }} g</td></tr>
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Not computed yet.</p>{% endif %}
+  <p class="muted">Units: {% for unit, grams in s.units %}{{ unit }} = {{ "%g"|format(grams) }} g{% if not loop.last %}, {% endif %}{% else %}grams and ounces only{% endfor %}</p>
+</section>
+
+<section class="totals">
+  <h2>Where the numbers came from</h2>
+  <p>Source: {{ food.source }}{% if food.source_ref %} ({{ food.source_ref }}){% endif %}</p>
+  {% if food.notes %}<p class="muted">{{ food.notes }}</p>{% endif %}
+</section>
+{% endblock %}

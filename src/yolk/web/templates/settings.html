@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Settings · yolk{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+{% if form_error %}<p class="notice error-panel">{{ form_error }}</p>{% endif %}
+<section class="totals">
+  <h2>Point sizes</h2>
+  <table>
+    <tbody>
+      <tr><th scope="row">Fat (F)</th><td class="num">{{ "%g"|format(rules.fat_g) }} g fat</td></tr>
+      <tr><th scope="row">Carb (C)</th><td class="num">{{ "%g"|format(rules.carb_g) }} g carbs</td></tr>
+      <tr><th scope="row">Protein (P)</th><td class="num">{{ "%g"|format(rules.protein_g) }} g protein</td></tr>
+      <tr><th scope="row">Veggie (V)</th><td class="num">{{ "%g"|format(rules.veggie_g) }} g carbs from a vegetable</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Free foods count no points. Point sizes come from your coach's sheet.</p>
+</section>
+<section class="totals">
+  <h2>Counting carbs</h2>
+  <form method="post" action="/settings/carb-basis">
+    <p><label><input type="radio" name="basis" value="total"{% if rules.carb_basis == "total" %} checked{% endif %}> Total carbs</label>
+      <span class="muted">as your coach's portions are written</span></p>
+    <p><label><input type="radio" name="basis" value="net"{% if rules.carb_basis == "net" %} checked{% endif %}> Net carbs</label>
+      <span class="muted">total minus fiber and sugar alcohols; a food with no fiber recorded counts its total</span></p>
+    <button type="submit">Save</button>
+  </form>
+  <p class="muted">Applies to every point value and to the carbs of point-system days. Macro-percentage plans always count total carbs.</p>
+</section>
+{% endblock %}

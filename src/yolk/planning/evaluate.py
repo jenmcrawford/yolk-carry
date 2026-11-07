@@ -13,8 +13,11 @@ from datetime import datetime, timezone
 from yolk.db import Connection
 from yolk.errors import MissingYieldError, UnknownUnitError
 from yolk.foods import portion_macros
-from yolk.macros import KCAL_PER_G_CARB, KCAL_PER_G_FAT, Macros
-from yolk.people import targets_for_profile
+from yolk.macros import KCAL_PER_G_CARB, KCAL_PER_G_FAT, KCAL_PER_G_PROTEIN, Macros
+from yolk.people import profile_basis, slot_allotments, targets_for_profile
+from yolk.points import (
+    Points, counted_carbs, fiber_known, food_points, load_rules, point_hints,
+)
 from yolk.units import to_grams
 
 
@@ -76,6 +79,14 @@ class EntryEvaluation:
     grams: float | None
     macros: Macros | None
     error: str | None = None
+    # Both None exactly when `error` is set, like grams and macros.
+    points: Points | None = None
+    # The carbs the day counts for this entry: total, or net under a points
+    # profile whose carb setting is net.
+    counted_carb_g: float | None = None
+    # False when the food's fiber was never recorded: under net carbs it
+    # then counts its total carbs, and the page says so.
+    fiber_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -83,6 +94,12 @@ class SlotEvaluation:
     slot_no: int
     totals: Macros
     entries: list[EntryEvaluation] = field(default_factory=list)
+    points: Points = Points()
+    # None under a macros profile, or for a slot number with no template.
+    allotment: Points | None = None
+    # '½C short' for each point type off the allotment by more than ¼.
+    # Hints never fail the day.
+    hints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,6 +113,18 @@ class DayEvaluation:
     slots: list[SlotEvaluation] = field(default_factory=list)
     # Entries left out of every total because they could not be measured.
     excluded: int = 0
+    # 'macros' or 'points'. Under points, totals.kcal is counted from grams
+    # (9/4/4) and totals.carb_g is the counted carbs; label_kcal keeps what
+    # the labels say. Under macros the two calorie figures are the same.
+    basis: str = "macros"
+    points: Points = Points()
+    allotment: Points | None = None
+    label_kcal: float = 0.0
+    # Actual and target shares of calories, as judged.
+    fat_pct: float = 0.0
+    carb_pct: float = 0.0
+    target_fat_pct: float = 0.0
+    target_carb_pct: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -132,16 +161,26 @@ def evaluate(
         (day_plan_id,),
     ).fetchall()
 
+    rules = load_rules(conn)
+    basis = profile_basis(conn, plan["profile_id"])
+    # Macros profiles were written by a coach counting total carbs.
+    carb_basis = rules.carb_basis if basis == "points" else "total"
+    allotments = slot_allotments(conn, plan["profile_id"])
+
     by_slot: dict[int, list[EntryEvaluation]] = {}
     for row in rows:
         try:
             grams = to_grams(conn, row["food_id"], row["qty"], row["unit"])
             macros = portion_macros(conn, row["food_id"], row["qty"], row["unit"])
+            points = food_points(conn, row["food_id"], grams, rules)
+            known = fiber_known(conn, row["food_id"])
+            counted = counted_carbs(macros, carb_basis, fiber_known=known)
             error = None
         except (UnknownUnitError, MissingYieldError) as exc:
             if not partial:
                 raise
-            grams, macros, error = None, None, str(exc)
+            grams, macros, points, counted, error = None, None, None, None, str(exc)
+            known = True
         by_slot.setdefault(row["slot_no"], []).append(
             EntryEvaluation(
                 entry_id=row["id"],
@@ -152,25 +191,53 @@ def evaluate(
                 grams=grams,
                 macros=macros,
                 error=error,
+                points=points,
+                counted_carb_g=counted,
+                fiber_known=known,
             )
         )
 
-    slots = [
-        SlotEvaluation(
-            slot_no=slot_no,
-            totals=sum(
-                (e.macros for e in entries if e.macros is not None), Macros.zero()
-            ),
-            entries=entries,
+    slots = []
+    for slot_no, entries in sorted(by_slot.items()):
+        slot_points = sum(
+            (e.points for e in entries if e.points is not None), Points.zero()
         )
-        for slot_no, entries in sorted(by_slot.items())
-    ]
-    totals = sum((s.totals for s in slots), Macros.zero())
+        allotment = allotments.get(slot_no)
+        slots.append(
+            SlotEvaluation(
+                slot_no=slot_no,
+                totals=sum(
+                    (e.macros for e in entries if e.macros is not None), Macros.zero()
+                ),
+                entries=entries,
+                points=slot_points,
+                allotment=allotment,
+                hints=() if allotment is None else point_hints(slot_points, allotment),
+            )
+        )
+    label_totals = sum((s.totals for s in slots), Macros.zero())
     excluded = sum(1 for s in slots for e in s.entries if e.error is not None)
+
+    if basis == "points":
+        # Counted from grams with the same arithmetic that builds the target,
+        # so a day that hits every allotment always passes on calories.
+        carb_g = sum(
+            e.counted_carb_g
+            for s in slots for e in s.entries
+            if e.counted_carb_g is not None
+        )
+        totals = label_totals.replace(
+            carb_g=carb_g,
+            kcal=label_totals.fat_g * KCAL_PER_G_FAT
+            + carb_g * KCAL_PER_G_CARB
+            + label_totals.protein_g * KCAL_PER_G_PROTEIN,
+        )
+    else:
+        totals = label_totals
 
     target = targets_for_profile(conn, plan["profile_id"])
     profile = conn.execute(
-        "SELECT fat_pct, carb_pct, kcal_tol_pct, protein_tol_g, macro_pct_tol "
+        "SELECT kcal_tol_pct, protein_tol_g, macro_pct_tol "
         "FROM macro_profiles WHERE id = ?",
         (plan["profile_id"],),
     ).fetchone()
@@ -185,12 +252,16 @@ def evaluate(
 
     actual_fat_pct = _pct_of_kcal(totals.fat_g, KCAL_PER_G_FAT, totals.kcal)
     actual_carb_pct = _pct_of_kcal(totals.carb_g, KCAL_PER_G_CARB, totals.kcal)
+    # From the gram targets, so a points profile (which stores no
+    # percentages) and a macros profile are judged the same way.
+    target_fat_pct = _pct_of_kcal(target.fat_g, KCAL_PER_G_FAT, target.kcal)
+    target_carb_pct = _pct_of_kcal(target.carb_g, KCAL_PER_G_CARB, target.kcal)
 
     within_tolerance = {
         "kcal": abs(deltas.kcal) <= target.kcal * profile["kcal_tol_pct"] / 100.0,
         "protein_g": abs(deltas.protein_g) <= profile["protein_tol_g"],
-        "fat_pct": abs(actual_fat_pct - profile["fat_pct"]) <= profile["macro_pct_tol"],
-        "carb_pct": abs(actual_carb_pct - profile["carb_pct"])
+        "fat_pct": abs(actual_fat_pct - target_fat_pct) <= profile["macro_pct_tol"],
+        "carb_pct": abs(actual_carb_pct - target_carb_pct)
         <= profile["macro_pct_tol"],
     }
 
@@ -203,4 +274,12 @@ def evaluate(
         within_tolerance=within_tolerance,
         slots=slots,
         excluded=excluded,
+        basis=basis,
+        points=sum((s.points for s in slots), Points.zero()),
+        allotment=sum(allotments.values(), Points.zero()) if allotments else None,
+        label_kcal=label_totals.kcal,
+        fat_pct=actual_fat_pct,
+        carb_pct=actual_carb_pct,
+        target_fat_pct=target_fat_pct,
+        target_carb_pct=target_carb_pct,
     )

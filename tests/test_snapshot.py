@@ -69,6 +69,31 @@ def test_round_trip_is_byte_identical(seeded, tmp_path):
     restored.close()
 
 
+def test_round_trip_includes_point_tables(seeded, tmp_path):
+    out_a, out_b = tmp_path / "a", tmp_path / "b"
+    food_id = seeded.execute("SELECT min(id) AS id FROM foods").fetchone()["id"]
+    seeded.execute(
+        "INSERT INTO point_portions (food_id, source, qty, unit, claimed) "
+        "VALUES (?, 'coach', 100, 'g', '1P')",
+        (food_id,),
+    )
+    seeded.execute("UPDATE settings SET value = 'net' WHERE key = 'carb_basis'")
+    seeded.execute("UPDATE schema_version SET applied_on = '2020-01-01'")
+    seeded.commit()
+    export_database(seeded, out_a)
+
+    restored = _fresh()
+    import_database(restored, out_a)
+    export_database(restored, out_b)
+
+    for name in ("point_rules.json", "settings.json", "point_portions.json"):
+        assert (out_a / name).read_bytes() == (out_b / name).read_bytes(), name
+    assert json.loads((out_b / "settings.json").read_text())[0]["value"] == "net"
+    for path in sorted(out_a.glob("*.json")):
+        assert path.read_bytes() == (out_b / path.name).read_bytes(), path.name
+    restored.close()
+
+
 def test_import_restores_the_plan(seeded, tmp_path):
     export_database(seeded, tmp_path)
     restored = _fresh()

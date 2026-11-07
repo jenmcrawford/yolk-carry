@@ -20,6 +20,7 @@ class Macros:
     fat_g: float = 0.0
     carb_g: float = 0.0
     fiber_g: float = 0.0
+    sugar_alcohol_g: float = 0.0
 
     @staticmethod
     def zero() -> "Macros":
@@ -34,6 +35,7 @@ class Macros:
             fat_g=self.fat_g + other.fat_g,
             carb_g=self.carb_g + other.carb_g,
             fiber_g=self.fiber_g + other.fiber_g,
+            sugar_alcohol_g=self.sugar_alcohol_g + other.sugar_alcohol_g,
         )
 
     __radd__ = __add__
@@ -45,6 +47,7 @@ class Macros:
             fat_g=self.fat_g * factor,
             carb_g=self.carb_g * factor,
             fiber_g=self.fiber_g * factor,
+            sugar_alcohol_g=self.sugar_alcohol_g * factor,
         )
 
     def replace(self, **kwargs: float) -> "Macros":

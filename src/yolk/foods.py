@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from datetime import date, datetime, timezone
 
 from yolk.db import Connection
-from yolk.errors import MissingYieldError, RecipeCycleError
+from yolk.errors import MissingYieldError, RecipeCycleError, UnknownUnitError
 from yolk.macros import Macros
 from yolk.units import to_grams
+
+if TYPE_CHECKING:
+    from yolk.points import OnePoint, PointRules, Points, Portion
 
 
 def create_item(
@@ -30,9 +34,19 @@ def create_item(
     verified_on: str | None = None,
     units: dict[str, float] | None = None,
     notes: str | None = None,
+    point_class: str | None = None,
+    fiber_known: bool = True,
+    sugar_alcohol_g_100g: float | None = None,
     commit: bool = True,
 ) -> int:
     """Create a purchased food. Macros are per 100 g.
+
+    `fiber_known=False` stores fiber as NULL (never recorded) rather than 0:
+    under net carbs the two differ, and only NULL says the number is missing.
+
+    `point_class` overrides how the food is scored in points. A 'veg' food
+    defaults to 'veggie', since whether carbs count as veggie is a judgement
+    the macros cannot make; everything else defaults to automatic (NULL).
 
     The food row and its unit conversions are written in one transaction: a
     bad unit must not leave a food behind with no way to measure it.
@@ -44,17 +58,20 @@ def create_item(
     """
     if verified and verified_on is None:
         verified_on = date.today().isoformat()
+    if point_class is None and role == "veg":
+        point_class = "veggie"
     try:
         row = conn.execute(
             "INSERT INTO foods (kind, name, brand, role, kcal_100g, protein_g_100g, "
             "fat_g_100g, carb_g_100g, fiber_g_100g, source, source_ref, verified, "
-            "verified_on, notes) "
-            "VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "verified_on, notes, point_class, sugar_alcohol_g_100g) "
+            "VALUES ('item', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (
                 name, brand, role,
                 macros.kcal, macros.protein_g, macros.fat_g,
-                macros.carb_g, macros.fiber_g,
-                source, source_ref, int(verified), verified_on, notes,
+                macros.carb_g, macros.fiber_g if fiber_known else None,
+                source, source_ref, int(verified), verified_on, notes, point_class,
+                sugar_alcohol_g_100g,
             ),
         ).fetchone()
         food_id = row["id"]
@@ -100,7 +117,7 @@ def macros_per_100g(conn: Connection, food_id: int) -> Macros:
     """
     row = conn.execute(
         "SELECT kind, name, kcal_100g, protein_g_100g, fat_g_100g, carb_g_100g, "
-        "fiber_g_100g FROM foods WHERE id = ?",
+        "fiber_g_100g, sugar_alcohol_g_100g FROM foods WHERE id = ?",
         (food_id,),
     ).fetchone()
     if row is None:
@@ -117,6 +134,7 @@ def macros_per_100g(conn: Connection, food_id: int) -> Macros:
         fat_g=row["fat_g_100g"] or 0.0,
         carb_g=row["carb_g_100g"] or 0.0,
         fiber_g=row["fiber_g_100g"] or 0.0,
+        sugar_alcohol_g=row["sugar_alcohol_g_100g"] or 0.0,
     )
 
 
@@ -139,6 +157,15 @@ class FoodSummary:
     # None exactly when a recipe's macros were never computed.
     per_100g: Macros | None
     units: list[tuple[str, float]]
+    # The class override, or None for automatic.
+    point_class: str | None = None
+    # None for a free food, or one whose points cannot be computed.
+    one_point: "OnePoint | None" = None
+    coach: "Portion | None" = None
+    # Points at the coach's portion, and whether they disagree with it.
+    coach_points: "Points | None" = None
+    disagrees: bool = False
+    fiber_known: bool = True
 
 
 def _like_pattern(query: str) -> str:
@@ -158,13 +185,34 @@ def search_library(conn: Connection, query: str) -> list[FoodSummary]:
     """
     pattern = _like_pattern(query.strip().lower())
     rows = conn.execute(
-        "SELECT id, name, brand, kind, role, verified, kcal_100g, "
-        "protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g FROM foods "
+        f"SELECT {_SUMMARY_COLUMNS} FROM foods "
         "WHERE lower(name) LIKE ? ESCAPE '\\' OR lower(brand) LIKE ? ESCAPE '\\' "
         "ORDER BY lower(name), lower(brand), id",
         (pattern, pattern),
     ).fetchall()
+    return _summaries(conn, rows)
 
+
+def food_summary(conn: Connection, food_id: int) -> FoodSummary:
+    """One food, summarised as search_library would list it."""
+    row = conn.execute(
+        f"SELECT {_SUMMARY_COLUMNS} FROM foods WHERE id = ?", (food_id,)
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No food with id {food_id}")
+    return _summaries(conn, [row])[0]
+
+
+_SUMMARY_COLUMNS = (
+    "id, name, brand, kind, role, verified, point_class, kcal_100g, "
+    "protein_g_100g, fat_g_100g, carb_g_100g, fiber_g_100g"
+)
+
+
+def _summaries(conn: Connection, rows: list[sqlite3.Row]) -> list[FoodSummary]:
+    from yolk.points import load_rules
+
+    rules = load_rules(conn)
     units: dict[int, list[tuple[str, float]]] = {}
     for row in conn.execute(
         "SELECT food_id, unit, grams FROM food_units ORDER BY food_id, unit"
@@ -189,9 +237,40 @@ def search_library(conn: Connection, query: str) -> list[FoodSummary]:
                 fiber_g=row["fiber_g_100g"] or 0.0,
             ),
             units=units.get(row["id"], []),
+            point_class=row["point_class"],
+            **_points_summary(conn, row, rules),
         )
         for row in rows
     ]
+
+
+def _points_summary(conn: Connection, row: sqlite3.Row, rules: "PointRules") -> dict:
+    """The points fields of a FoodSummary.
+
+    Empty for a recipe whose macros were never computed, so one unfinished
+    recipe cannot break the whole list, as with per_100g.
+    """
+    from yolk.points import agrees, fiber_known, food_points, one_point, portions
+
+    if row["kcal_100g"] is None:
+        return {}
+    try:
+        coach = next(
+            (p for p in portions(conn, row["id"]) if p.source == "coach"), None
+        )
+        coach_points = (
+            None if coach is None else food_points(conn, row["id"], coach.grams, rules)
+        )
+        return {
+            "one_point": one_point(conn, row["id"], rules),
+            "coach": coach,
+            "coach_points": coach_points,
+            "disagrees": coach_points is not None
+            and not agrees(conn, row["id"], coach_points, rules),
+            "fiber_known": fiber_known(conn, row["id"]),
+        }
+    except (MissingYieldError, UnknownUnitError):
+        return {}
 
 
 def create_recipe(
@@ -404,6 +483,35 @@ def set_cooked_yield(
         raise
     conn.commit()
     return macros
+
+
+def recipes_using(conn: Connection, food_id: int) -> list[sqlite3.Row]:
+    """Every recipe that contains this food, directly or through another
+    recipe, nearest first. Each row has id, name, and cooked_yield_g."""
+    found: list[sqlite3.Row] = []
+    seen = {food_id}
+    frontier = [food_id]
+    while frontier:
+        parents = conn.execute(
+            f"SELECT DISTINCT f.id, f.name, f.cooked_yield_g FROM food_components c "
+            f"JOIN foods f ON f.id = c.parent_food_id "
+            f"WHERE c.child_food_id IN ({', '.join('?' for _ in frontier)}) ORDER BY f.id",
+            frontier,
+        ).fetchall()
+        frontier = [row["id"] for row in parents if row["id"] not in seen]
+        seen.update(frontier)
+        found.extend(row for row in parents if row["id"] in frontier)
+    return found
+
+
+def recompute_recipes_using(conn: Connection, food_id: int) -> None:
+    """Refresh the cached macros of every recipe containing this food. Does
+    not commit. A recipe with no yield has no cache to refresh."""
+    for recipe in recipes_using(conn, food_id):
+        if recipe["cooked_yield_g"] is not None:
+            _write_computed_macros(
+                conn, recipe["id"], _macros_resolved(conn, recipe["id"], frozenset())
+            )
 
 
 def recompute_recipe(conn: Connection, food_id: int) -> Macros:

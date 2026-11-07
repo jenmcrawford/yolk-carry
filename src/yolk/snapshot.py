@@ -24,10 +24,13 @@ DEFAULT_DIR = REPO_ROOT / "data"
 # Parents before children, so an import with foreign keys on would still work.
 TABLES: tuple[str, ...] = (
     "people",
+    "point_rules",
+    "settings",
     "tags",
     "foods",
     "food_tags",
     "food_units",
+    "point_portions",
     "food_components",
     "protocols",
     "protocol_rules",
@@ -41,6 +44,10 @@ TABLES: tuple[str, ...] = (
 )
 
 _VERSION_TABLE = "schema_version"
+
+# Configuration the migrations seed. A freshly migrated database is never
+# empty here, so an import replaces these rows instead of refusing.
+_SEEDED_TABLES: frozenset[str] = frozenset({"point_rules", "settings"})
 
 
 class SnapshotError(YolkError):
@@ -117,6 +124,8 @@ def import_database(conn: Connection, in_dir: Path = DEFAULT_DIR) -> dict[str, i
         )
 
     for table in TABLES:
+        if table in _SEEDED_TABLES:
+            continue
         if conn.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"]:
             raise SnapshotError(
                 f"Refusing to import: this database already has data in "
@@ -128,6 +137,8 @@ def import_database(conn: Connection, in_dir: Path = DEFAULT_DIR) -> dict[str, i
     conn.execute("PRAGMA foreign_keys = OFF")
     try:
         conn.execute("BEGIN")
+        for table in sorted(_SEEDED_TABLES):
+            conn.execute(f"DELETE FROM {table}")
         for table in TABLES:
             rows = _load(in_dir, table)
             counts[table] = len(rows)

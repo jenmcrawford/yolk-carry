@@ -28,6 +28,17 @@
         </td>
       </tr>
     {% endfor %}
+    {% if evaluation.allotment %}
+      <tr>
+        <th scope="row">Points</th>
+        <td class="num">{{ evaluation.points|points }}</td>
+        <td class="num">{{ evaluation.allotment|points }}</td>
+        <td></td>{% if vs %}<td></td>{% endif %}<td></td>
+      </tr>
+    {% endif %}
     </tbody>
   </table>
+  {% if evaluation.basis == "points" %}
+  <p class="muted">Calories counted from grams (9 per gram of fat, 4 per gram of carbs and protein). Label calories: {{ "%.0f"|format(evaluation.label_kcal) }} kcal.</p>
+  {% endif %}
 </section>
